@@ -351,7 +351,7 @@ bool LoRaManager::parseLoRaReceive(
   // Build raw telemetry
   // ---------------------------------------------------
 
-  raw.transmitterId =
+  raw.transmitterAddress =
     sourceAddress;
 
   raw.sequence =
@@ -379,11 +379,11 @@ bool LoRaManager::parseLoRaReceive(
   );
 
   Serial.print(
-    "Transmitter: "
+    "Transmitter Address: "
   );
 
   Serial.println(
-    raw.transmitterId
+    raw.transmitterAddress
   );
 
   Serial.print(

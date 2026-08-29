@@ -1,4 +1,5 @@
 #pragma once
+#include <Arduino.h>
 
 // =====================================================
 //                 DISPLAY DATA MODEL
@@ -7,8 +8,8 @@
 struct DisplayData {
   bool valid;
 
-  int transmitterId;
-  int tankId;
+  int transmitterAddress;
+  String tankId;
 
   float distanceCm;
 

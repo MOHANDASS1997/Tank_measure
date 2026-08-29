@@ -24,10 +24,10 @@ const PacketConfig packetConfig = {
   true,   // requireVersion
 
   // enabled, required
-  { true, true },   // sequence
-  { true, true },   // distance
-  { true, true },   // battery voltage
-  { true, true }    // charging
+  { true, true },    // sequence
+  { true, true },    // distance
+  { true, false },   // battery voltage (optional)
+  { true, false }    // charging (optional)
 };
 
 const char* const PACKET_HEADER = "TS";

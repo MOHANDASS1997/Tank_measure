@@ -11,8 +11,8 @@
 
 class TankProcessor {
 public:
-  bool findTransmitter(int transmitterId, TransmitterConfig &result);
-  bool findTank(int tankId, TankConfig &result);
+  bool findTransmitter(int transmitterAddress, TransmitterConfig &result);
+  bool findTank(const char* tankId, TankConfig &result);
 
   float calculateTankPercent(
     float distanceCm,

@@ -10,7 +10,7 @@ TankProcessor tankProcessor;
 // =====================================================
 
 bool TankProcessor::findTransmitter(
-  int transmitterId,
+  int transmitterAddress,
   TransmitterConfig &result
 ) {
 
@@ -21,8 +21,8 @@ bool TankProcessor::findTransmitter(
   ) {
 
     if (
-      transmitters[i].transmitterId ==
-      transmitterId
+      transmitters[i].transmitterAddress ==
+      transmitterAddress
     ) {
 
       result =
@@ -38,7 +38,7 @@ bool TankProcessor::findTransmitter(
 // =====================================================
 
 bool TankProcessor::findTank(
-  int tankId,
+  const char* tankId,
   TankConfig &result
 ) {
 
@@ -49,8 +49,7 @@ bool TankProcessor::findTank(
   ) {
 
     if (
-      tanks[i].tankId ==
-      tankId
+      strcmp(tanks[i].tankId, tankId) == 0
     ) {
 
       result =
@@ -211,17 +210,17 @@ bool TankProcessor::process(
 
   if (
     !findTransmitter(
-      raw.transmitterId,
+      raw.transmitterAddress,
       transmitter
     )
   ) {
 
     Serial.print(
-      "Unknown transmitter: "
+      "Unknown transmitter address: "
     );
 
     Serial.println(
-      raw.transmitterId
+      raw.transmitterAddress
     );
 
     return false;
@@ -241,7 +240,7 @@ bool TankProcessor::process(
   ) {
 
     Serial.print(
-      "Unknown tank: "
+      "Unknown tank ID: "
     );
 
     Serial.println(
@@ -322,8 +321,8 @@ bool TankProcessor::process(
   data.hasBattery =
     raw.hasBattery;
 
-  data.transmitterId =
-    raw.transmitterId;
+  data.transmitterAddress =
+    raw.transmitterAddress;
 
   data.tankId =
     tank.tankId;
@@ -371,15 +370,15 @@ bool TankProcessor::process(
   );
 
   Serial.print(
-    "Transmitter: "
+    "Transmitter Address: "
   );
 
   Serial.println(
-    data.transmitterId
+    data.transmitterAddress
   );
 
   Serial.print(
-    "Tank: "
+    "Tank ID: "
   );
 
   Serial.println(

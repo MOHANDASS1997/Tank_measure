@@ -22,10 +22,10 @@ DisplayManager::DisplayManager()
     _lastFooterUpdate(0) {
 
   _displayData.valid = false;
-  _displayData.hasBattery = true;
+  _displayData.hasBattery = false;
   _displayData.timestamp = 0;
-  _displayData.transmitterId = 0;
-  _displayData.tankId = 0;
+  _displayData.transmitterAddress = 0;
+  _displayData.tankId = "";
   _displayData.distanceCm = 0.0;
   _displayData.tankPercent = 0.0;
   _displayData.currentLitres = 0.0;

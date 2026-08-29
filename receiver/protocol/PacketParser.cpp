@@ -195,48 +195,12 @@ bool parseApplicationPacket(
     }
 
     // =================================================
-    // ID
+    // ID (Optional field)
     // =================================================
-    //
-    // We deliberately don't use payload ID as identity.
-    //
-    // The actual RYLR998 source address is authoritative.
-    // =================================================
-
     else if (
       key == "id"
     ) {
-
-      int payloadId =
-        value.toInt();
-
-      if (
-        payloadId !=
-        sourceAddress
-      ) {
-
-        Serial.println(
-          "Packet rejected: ID mismatch"
-        );
-
-        Serial.print(
-          "LoRa address = "
-        );
-
-        Serial.println(
-          sourceAddress
-        );
-
-        Serial.print(
-          "Payload ID   = "
-        );
-
-        Serial.println(
-          payloadId
-        );
-
-        return false;
-      }
+      // Ignored: The actual RYLR998 LoRa source address is the authoritative identifier
     }
 
     // =================================================

@@ -48,7 +48,7 @@ bool MockDataManager::poll(RawTelemetry& raw, int& rssi, int& snr) {
   }
 
   _mockSequence++;
-  raw.transmitterId = 1;
+  raw.transmitterAddress = 3201;
   raw.sequence = _mockSequence;
   rssi = -68 - (_stateIndex * 3);
   snr = 9 + (_stateIndex % 4);

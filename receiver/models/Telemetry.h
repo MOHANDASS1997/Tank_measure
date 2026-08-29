@@ -5,7 +5,7 @@
 // =====================================================
 
 struct RawTelemetry {
-  int transmitterId;
+  int transmitterAddress;
   unsigned long sequence;
   float distanceCm;
   float batteryVoltage;

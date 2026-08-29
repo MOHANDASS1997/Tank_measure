@@ -20,7 +20,7 @@ struct LoRaConfig {
 const LoRaConfig loraConfig = {
   867000000UL,  // Band
   18,           // Network ID
-  0,            // Receiver address
+  3001,         // Receiver address
 
   9,            // SF
   7,            // BW

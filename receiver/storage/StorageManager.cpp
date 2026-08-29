@@ -16,8 +16,8 @@ void StorageManager::save(const DisplayData& data, uint32_t timestamp, bool isMo
 
   _preferences.putBool("valid", true);
   _preferences.putBool("isMock", isMockData);
-  _preferences.putInt("txId", data.transmitterId);
-  _preferences.putInt("tankId", data.tankId);
+  _preferences.putInt("txAddr", data.transmitterAddress);
+  _preferences.putString("tankId", data.tankId);
   _preferences.putFloat("dist", data.distanceCm);
   _preferences.putFloat("tankPct", data.tankPercent);
   _preferences.putFloat("litres", data.currentLitres);
@@ -70,8 +70,8 @@ bool StorageManager::load(DisplayData& data, uint32_t& timestamp, bool currentIs
   _preferences.begin("dass_telemetry", true);
 
   data.valid = true;
-  data.transmitterId = _preferences.getInt("txId", 1);
-  data.tankId = _preferences.getInt("tankId", 1);
+  data.transmitterAddress = _preferences.getInt("txAddr", 3201);
+  data.tankId = _preferences.getString("tankId", "tank_1");
   data.distanceCm = _preferences.getFloat("dist", 0.0f);
   data.tankPercent = _preferences.getFloat("tankPct", 0.0f);
   data.currentLitres = _preferences.getFloat("litres", 0.0f);
