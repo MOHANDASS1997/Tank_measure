@@ -1,0 +1,71 @@
+# ==========================================
+# Arduino & ESP32 Build Outputs
+# ==========================================
+*.hex
+*.bin
+*.elf
+*.eep
+*.lss
+*.sym
+*.map
+build/
+output/
+.arduino15/
+
+# ==========================================
+# C/C++ Compiled Objects & Dependencies
+# ==========================================
+*.o
+*.a
+*.so
+*.dylib
+*.obj
+*.d
+
+# ==========================================
+# PlatformIO
+# ==========================================
+.pio/
+.pioenvs/
+.piolibdeps/
+.clangd/
+.ccls-cache/
+
+# ==========================================
+# IDE & Editor Configuration
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+
+# ==========================================
+# Operating System Files
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+
+# Linux
+*~
+
+# ==========================================
+# Local Secrets & Custom Configs (if any)
+# ==========================================
+*.env
+*.local
+secrets.h

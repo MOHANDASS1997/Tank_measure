@@ -1,0 +1,34 @@
+#pragma once
+
+// =====================================================
+//                  RAW TELEMETRY
+// =====================================================
+
+struct RawTelemetry {
+  int transmitterId;
+  unsigned long sequence;
+  float distanceCm;
+  float batteryVoltage;
+  bool charging;
+};
+
+// =====================================================
+//             TEMPORARY PARSER STATE
+// =====================================================
+
+struct ParsedPacket {
+  bool versionFound;
+  int version;
+
+  bool sequenceFound;
+  unsigned long sequence;
+
+  bool distanceFound;
+  float distanceCm;
+
+  bool batteryFound;
+  float batteryVoltage;
+
+  bool chargingFound;
+  bool charging;
+};
