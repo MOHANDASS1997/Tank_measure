@@ -58,7 +58,7 @@ void setup() {
 
   Serial.println();
   Serial.println("================================");
-  Serial.println("     TANK SYNC - TX TEST");
+  Serial.println("     DASS HOME - TX TEST");
   Serial.println("================================");
   Serial.println();
 

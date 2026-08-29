@@ -10,6 +10,7 @@ struct RawTelemetry {
   float distanceCm;
   float batteryVoltage;
   bool charging;
+  bool hasBattery;
 };
 
 // =====================================================

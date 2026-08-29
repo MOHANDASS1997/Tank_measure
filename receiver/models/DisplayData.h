@@ -20,9 +20,11 @@ struct DisplayData {
   float batteryVoltage;
 
   bool charging;
+  bool hasBattery;
 
   unsigned long sequence;
   unsigned long lastReceived;
+  uint32_t timestamp;
 
   int rssi;
   int snr;

@@ -55,6 +55,19 @@ String LoRaManager::command(
 
       response += c;
     }
+
+    // Exit immediately once RYLR998 responds with +OK, +ERR, or line termination
+    if (
+      response.indexOf("+OK") >= 0 ||
+      response.indexOf("+ERR") >= 0 ||
+      (response.length() > 0 && response.endsWith("\n"))
+    ) {
+      break;
+    }
+
+    // Keep display animations rendering smoothly during startup
+    displayManager.update();
+    delay(2);
   }
 
   response.trim();
@@ -83,10 +96,16 @@ void LoRaManager::begin() {
     LORA_TX
   );
 
-  delay(200);
+  // Quick initial delay while keeping display alive
+  unsigned long start = millis();
+  while (millis() - start < 100) {
+    displayManager.update();
+    delay(5);
+  }
 
   command(
-    "AT"
+    "AT",
+    250
   );
 
   // ---------------------------------------------------
@@ -312,7 +331,7 @@ bool LoRaManager::parseLoRaReceive(
   }
 
   // ---------------------------------------------------
-  // Parse Tank_sync application data
+  // Parse DASS HOME application data
   // ---------------------------------------------------
 
   ParsedPacket parsed;
@@ -346,6 +365,9 @@ bool LoRaManager::parseLoRaReceive(
 
   raw.charging =
     parsed.charging;
+
+  raw.hasBattery =
+    parsed.batteryFound;
 
   // ---------------------------------------------------
   // Debug

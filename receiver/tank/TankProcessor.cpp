@@ -302,11 +302,15 @@ bool TankProcessor::process(
   // Calculate battery
   // ---------------------------------------------------
 
-  float batteryPercent =
-    calculateBatteryPercent(
-      raw.batteryVoltage,
-      transmitter
-    );
+  float batteryPercent = 0.0;
+
+  if (raw.hasBattery) {
+    batteryPercent =
+      calculateBatteryPercent(
+        raw.batteryVoltage,
+        transmitter
+      );
+  }
 
   // ---------------------------------------------------
   // Update display model
@@ -314,6 +318,9 @@ bool TankProcessor::process(
 
   data.valid =
     true;
+
+  data.hasBattery =
+    raw.hasBattery;
 
   data.transmitterId =
     raw.transmitterId;
@@ -337,10 +344,10 @@ bool TankProcessor::process(
     batteryPercent;
 
   data.batteryVoltage =
-    raw.batteryVoltage;
+    raw.hasBattery ? raw.batteryVoltage : 0.0f;
 
   data.charging =
-    raw.charging;
+    raw.hasBattery ? raw.charging : false;
 
   data.sequence =
     raw.sequence;
@@ -360,7 +367,7 @@ bool TankProcessor::process(
 
   Serial.println();
   Serial.println(
-    "========== Tank_sync =========="
+    "========== DASS HOME =========="
   );
 
   Serial.print(

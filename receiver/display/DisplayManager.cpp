@@ -16,9 +16,14 @@ DisplayManager::DisplayManager()
     _batteryStart(0.0),
     _batteryTarget(0.0),
     _animationStart(0),
-    _animationActive(false) {
+    _animationActive(false),
+    _waitAnimAngle(0.0f),
+    _lastWaitAnimUpdate(0),
+    _lastFooterUpdate(0) {
 
   _displayData.valid = false;
+  _displayData.hasBattery = true;
+  _displayData.timestamp = 0;
   _displayData.transmitterId = 0;
   _displayData.tankId = 0;
   _displayData.distanceCm = 0.0;
@@ -307,73 +312,140 @@ void DisplayManager::updateAnimation() {
 }
 
 // =====================================================
-//                    PAGE INDICATOR
+//                       FOOTER
 // =====================================================
 
-void DisplayManager::drawPageIndicator() {
+void DisplayManager::drawFooter() {
 
-  int radius =
-    max(
-      2,
-      (int)round(
-        _minDim * 0.035
-      )
-    );
+  // ---------------------------------------------------
+  // Left: Elongated Curved Rectangle Page Indicator
+  // (Only if battery data exists)
+  // ---------------------------------------------------
+  if (_displayData.hasBattery) {
+    int pillY = _screenH - 5;
+    int pillH = 4;
+    int pillR = 1;
 
-  int gap =
-    radius * 4;
+    if (_currentPage == PAGE_TANK) {
+      // Tank active (elongated pill on left, small pill on right)
+      _display.drawRBox(4, pillY, 10, pillH, pillR);
+      _display.drawRBox(17, pillY, 4, pillH, pillR);
+    } else {
+      // Battery active (small pill on left, elongated pill on right)
+      _display.drawRBox(4, pillY, 4, pillH, pillR);
+      _display.drawRBox(11, pillY, 10, pillH, pillR);
+    }
+  }
 
-  int centerX =
-    _screenW / 2;
+  // ---------------------------------------------------
+  // Right: Elapsed Time (<duration> ago)
+  // Completely bottom-aligned along the display edge
+  // ---------------------------------------------------
+  String elapsed = timeManager.formatElapsed(_displayData.timestamp, _displayData.lastReceived);
 
-  int y =
-    _screenH -
-    radius -
-    max(
-      1,
-      (int)round(
-        _minDim * 0.02
-      )
-    );
+  setSmallFont();
+  int textWidth = _display.getStrWidth(elapsed.c_str());
+  int textX = _screenW - textWidth;
 
-  int leftX =
-    centerX -
-    gap / 2;
+  // Draw elapsed time text
+  _display.drawStr(textX, _screenH - 1, elapsed.c_str());
+}
 
-  int rightX =
-    centerX +
-    gap / 2;
+// =====================================================
+//             HOURGLASS WAITING ANIMATION
+// =====================================================
 
-  if (
-    _currentPage ==
-    PAGE_TANK
-  ) {
+void DisplayManager::drawWaitingAnimation(
+  int centerX,
+  int centerY
+) {
 
-    _display.drawDisc(
-      leftX,
-      y,
-      radius
-    );
+  // Ambient time sparkles in background
+  _display.drawPixel(centerX - 13, centerY - 14);
+  _display.drawPixel(centerX + 14, centerY - 12);
+  _display.drawPixel(centerX - 12, centerY + 14);
+  _display.drawPixel(centerX + 13, centerY + 13);
 
-    _display.drawCircle(
-      rightX,
-      y,
-      radius
-    );
+  if (_waitAnimAngle < 270.0f) {
+    // -------------------------------------------------
+    // Phase 1: Sand trickling down (0° - 270°)
+    // -------------------------------------------------
+    float progress = _waitAnimAngle / 270.0f; // 0.0 to 1.0
+
+    // Top & Bottom horizontal plates
+    _display.drawHLine(centerX - 8, centerY - 13, 17);
+    _display.drawHLine(centerX - 8, centerY + 13, 17);
+
+    // Glass contours
+    _display.drawLine(centerX - 7, centerY - 12, centerX - 2, centerY - 1);
+    _display.drawLine(centerX + 7, centerY - 12, centerX + 2, centerY - 1);
+    _display.drawLine(centerX - 2, centerY + 1, centerX - 7, centerY + 12);
+    _display.drawLine(centerX + 2, centerY + 1, centerX + 7, centerY + 12);
+    _display.drawLine(centerX - 2, centerY - 1, centerX - 2, centerY + 1);
+    _display.drawLine(centerX + 2, centerY - 1, centerX + 2, centerY + 1);
+
+    // Upper chamber sand (draining)
+    int topLines = (int)round((1.0f - progress) * 5.0f);
+    for (int i = 0; i < topLines; i++) {
+      int y = centerY - 3 - i * 2;
+      int halfW = map(i, 0, 5, 2, 6);
+      _display.drawHLine(centerX - halfW, y, 2 * halfW + 1);
+    }
+
+    // Flowing sand stream in the center neck
+    _display.drawVLine(centerX, centerY - 1, 6);
+    int grain = ((int)(_waitAnimAngle * 1.5f)) % 6;
+    _display.drawPixel(centerX, centerY + grain);
+
+    // Lower chamber sand (accumulating)
+    int botLines = (int)round(progress * 5.0f);
+    for (int i = 0; i < botLines; i++) {
+      int y = centerY + 11 - i * 2;
+      int halfW = map(i, 0, 5, 6, 2);
+      _display.drawHLine(centerX - halfW, y, 2 * halfW + 1);
+    }
 
   } else {
+    // -------------------------------------------------
+    // Phase 2: Smooth 180° Hourglass Flip (270° - 360°)
+    // -------------------------------------------------
+    float flipProgress = (_waitAnimAngle - 270.0f) / 90.0f; // 0.0 to 1.0
+    float phi = flipProgress * PI;                          // 0 to PI
 
-    _display.drawCircle(
-      leftX,
-      y,
-      radius
-    );
+    float cosA = cos(phi);
+    float sinA = sin(phi);
 
-    _display.drawDisc(
-      rightX,
-      y,
-      radius
-    );
+    // 8 key vertices defining the hourglass shape
+    const int numV = 8;
+    const int vx[numV] = { -8,  8, -8,  8, -2,  2, -2,  2 };
+    const int vy[numV] = {-13,-13, 13, 13, -1, -1,  1,  1 };
+
+    int rx[numV];
+    int ry[numV];
+
+    for (int i = 0; i < numV; i++) {
+      rx[i] = centerX + (int)round(vx[i] * cosA - vy[i] * sinA);
+      ry[i] = centerY + (int)round(vx[i] * sinA + vy[i] * cosA);
+    }
+
+    // Top and bottom plates
+    _display.drawLine(rx[0], ry[0], rx[1], ry[1]);
+    _display.drawLine(rx[2], ry[2], rx[3], ry[3]);
+
+    // Upper sides
+    _display.drawLine(rx[0], ry[0], rx[4], ry[4]);
+    _display.drawLine(rx[1], ry[1], rx[5], ry[5]);
+
+    // Neck
+    _display.drawLine(rx[4], ry[4], rx[6], ry[6]);
+    _display.drawLine(rx[5], ry[5], rx[7], ry[7]);
+
+    // Lower sides
+    _display.drawLine(rx[6], ry[6], rx[2], ry[2]);
+    _display.drawLine(rx[7], ry[7], rx[3], ry[3]);
+
+    // Tumbling sand particle core during flip
+    _display.drawDisc(centerX, centerY, 2);
   }
 }
 
@@ -385,75 +457,125 @@ void DisplayManager::drawNotConnectedScreen() {
 
   _display.clearBuffer();
 
+  // ---------------------------------------------------
+  // Virtual 60:40 Compartment Split (Borderless)
+  // Left: ~60% (0..76 px), Right: ~40% (77..127 px)
+  // ---------------------------------------------------
+
+  // Left Compartment: Header & Waiting Text
   setLabelFont();
+  const char* title = "DASS HOME";
+  drawTextTop(6, 10, title);
 
-  const char* title =
-    "TANK_SYNC";
+  setSmallFont();
+  const char* line1 = "Waiting for";
+  drawTextTop(6, 28, line1);
 
-  int titleWidth =
-    _display.getStrWidth(
-      title
-    );
+  const char* line2 = "tank data...";
+  drawTextTop(6, 40, line2);
 
+  // Right Compartment: Animated Hourglass Waiting Indicator
+  int rightCenterX = 77 + (128 - 77) / 2; // = 102
+  int rightCenterY = _screenH / 2;         // = 32
+
+  drawWaitingAnimation(rightCenterX, rightCenterY);
+
+  _display.sendBuffer();
+}
+
+// =====================================================
+//                 WIFI NUDGE SCREEN
+// =====================================================
+
+void DisplayManager::drawWiFiNudgeScreen(
+  const String& ssid,
+  const String& ip,
+  const char* statusMsg
+) {
+
+  _display.clearBuffer();
+
+  // Header
+  setLabelFont();
+  const char* title = "WIFI SETUP";
+  int titleWidth = _display.getStrWidth(title);
   drawTextTop(
-    (
-      _screenW -
-      titleWidth
-    ) / 2,
-    (int)round(
-      _screenH * 0.22
-    ),
+    (_screenW - titleWidth) / 2,
+    2,
     title
   );
 
+  _display.drawHLine(6, 14, _screenW - 12);
+
+  // Body
+  setSmallFont();
+  drawTextTop(8, 17, "Connect to Hotspot:");
+
+  String ssidLine = "SSID: " + ssid;
+  drawTextTop(8, 27, ssidLine.c_str());
+
   setLabelFont();
+  String ipLine = "IP: " + ip;
+  drawTextTop(8, 38, ipLine.c_str());
 
-  const char* message =
-    "Not connected";
-
-  int messageWidth =
-    _display.getStrWidth(
-      message
-    );
-
-  int messageHeight =
-    _display.getAscent() -
-    _display.getDescent();
-
-  int messageTop =
-    (
-      _screenH -
-      messageHeight
-    ) / 2;
-
-  drawTextTop(
-    (
-      _screenW -
-      messageWidth
-    ) / 2,
-    messageTop,
-    message
-  );
+  // Footer
+  _display.drawHLine(6, 50, _screenW - 12);
 
   setSmallFont();
-
-  const char* waiting =
-    "Waiting for LoRa...";
-
-  int waitingWidth =
-    _display.getStrWidth(
-      waiting
-    );
-
+  const char* hint = (statusMsg != nullptr) ? statusMsg : "Open IP in browser";
+  int hintWidth = _display.getStrWidth(hint);
   drawTextTop(
-    (
-      _screenW -
-      waitingWidth
-    ) / 2,
-    (int)round(
-      _screenH * 0.68
-    ),
-    waiting
+    (_screenW - hintWidth) / 2,
+    53,
+    hint
+  );
+
+  _display.sendBuffer();
+}
+
+// =====================================================
+//               WIFI CONNECTED SCREEN
+// =====================================================
+
+void DisplayManager::drawWiFiConnectedScreen(
+  const String& ssid,
+  const String& ip
+) {
+
+  _display.clearBuffer();
+
+  // Header
+  setLabelFont();
+  const char* title = "WIFI CONNECTED";
+  int titleWidth = _display.getStrWidth(title);
+  drawTextTop(
+    (_screenW - titleWidth) / 2,
+    2,
+    title
+  );
+
+  _display.drawHLine(6, 14, _screenW - 12);
+
+  // Body
+  setSmallFont();
+  String ssidLine = "SSID: " + ssid;
+  drawTextTop(8, 18, ssidLine.c_str());
+
+  drawTextTop(8, 29, "Assigned IP:");
+
+  setLabelFont();
+  drawTextTop(8, 39, ip.c_str());
+
+  // Footer
+  _display.drawHLine(6, 51, _screenW - 12);
+
+  setSmallFont();
+  const char* status = "Starting LoRa...";
+  int statusWidth = _display.getStrWidth(status);
+  drawTextTop(
+    (_screenW - statusWidth) / 2,
+    54,
+    status
   );
 
   _display.sendBuffer();
@@ -479,9 +601,9 @@ void DisplayManager::drawTankScreen(
 
   int footerHeight =
     max(
-      7,
+      10,
       (int)round(
-        _screenH * 0.10
+        _screenH * 0.16
       )
     );
 
@@ -754,12 +876,7 @@ void DisplayManager::drawTankScreen(
   int separatorY =
     contentTop +
     titleHeight +
-    max(
-      2,
-      (int)round(
-        _screenH * 0.025
-      )
-    );
+    2;
 
   _display.drawHLine(
     infoX,
@@ -798,12 +915,7 @@ void DisplayManager::drawTankScreen(
 
   int percentageTop =
     separatorY +
-    max(
-      2,
-      (int)round(
-        _screenH * 0.045
-      )
-    );
+    4;
 
   int percentageX =
     infoX +
@@ -834,7 +946,7 @@ void DisplayManager::drawTankScreen(
     String(
       litres
     ) +
-    "L/" +
+    "L / " +
     String(
       (int)round(
         _displayData.capacityLitres
@@ -851,13 +963,7 @@ void DisplayManager::drawTankScreen(
 
   int litresTop =
     percentageTop +
-    percentageHeight +
-    max(
-      3,
-      (int)round(
-        _screenH * 0.035
-      )
-    );
+    percentageHeight;
 
   drawTextTop(
     infoX +
@@ -872,7 +978,7 @@ void DisplayManager::drawTankScreen(
     litresText.c_str()
   );
 
-  drawPageIndicator();
+  drawFooter();
 
   _display.sendBuffer();
 }
@@ -897,9 +1003,9 @@ void DisplayManager::drawBatteryScreen(
 
   int footerHeight =
     max(
-      7,
+      10,
       (int)round(
-        _screenH * 0.10
+        _screenH * 0.16
       )
     );
 
@@ -1200,12 +1306,7 @@ void DisplayManager::drawBatteryScreen(
   int percentageTop =
     contentTop +
     batteryTitleHeight +
-    max(
-      2,
-      (int)round(
-        _screenH * 0.025
-      )
-    );
+    5;
 
   int percentageX =
     rightX +
@@ -1288,7 +1389,7 @@ void DisplayManager::drawBatteryScreen(
     );
   }
 
-  drawPageIndicator();
+  drawFooter();
 
   _display.sendBuffer();
 }
@@ -1306,6 +1407,14 @@ void DisplayManager::drawCurrentScreen() {
     drawNotConnectedScreen();
 
     return;
+  }
+
+  // If battery data is not present, always stay on tank page
+  if (
+    !_displayData.hasBattery &&
+    _currentPage == PAGE_BATTERY
+  ) {
+    _currentPage = PAGE_TANK;
   }
 
   if (
@@ -1332,6 +1441,7 @@ void DisplayManager::drawCurrentScreen() {
 void DisplayManager::updateData(const DisplayData& data) {
 
   _displayData = data;
+  _lastFooterUpdate = millis();
   startAnimation();
   drawCurrentScreen();
 }
@@ -1343,7 +1453,40 @@ void DisplayManager::showNotConnected() {
   drawNotConnectedScreen();
 }
 
+void DisplayManager::showWiFiNudge(
+  const String& ssid,
+  const String& ip,
+  const char* statusMsg
+) {
+
+  _displayData.valid = false;
+  _animationActive = false;
+  drawWiFiNudgeScreen(
+    ssid,
+    ip,
+    statusMsg
+  );
+}
+
+void DisplayManager::showWiFiConnected(
+  const String& ssid,
+  const String& ip
+) {
+
+  _displayData.valid = false;
+  _animationActive = false;
+  drawWiFiConnectedScreen(
+    ssid,
+    ip
+  );
+}
+
 void DisplayManager::switchPage() {
+
+  // If no battery data is available, do not switch page
+  if (!_displayData.hasBattery) {
+    return;
+  }
 
   if (
     _currentPage ==
@@ -1366,34 +1509,21 @@ void DisplayManager::update() {
 
   updateAnimation();
 
-  if (
-    _animationActive
-  ) {
-
+  if (!_displayData.valid) {
+    // Animate hourglass sand timer when waiting for transmitter
+    if (millis() - _lastWaitAnimUpdate >= WAIT_ANIM_INTERVAL_MS) {
+      _lastWaitAnimUpdate = millis();
+      _waitAnimAngle += 5.0f;
+      if (_waitAnimAngle >= 360.0f) {
+        _waitAnimAngle -= 360.0f;
+      }
+      drawNotConnectedScreen();
+    }
+  } else if (_animationActive) {
     drawCurrentScreen();
-  }
-
-  // ===================================================
-  // Connection timeout
-  // ===================================================
-
-  if (
-    _displayData.valid &&
-    millis() -
-      _displayData.lastReceived >
-      LORA_TIMEOUT_MS
-  ) {
-
-    _displayData.valid =
-      false;
-
-    _animationActive =
-      false;
-
-    Serial.println(
-      "LoRa timeout - disconnected"
-    );
-
-    drawNotConnectedScreen();
+  } else if (millis() - _lastFooterUpdate >= 1000) {
+    // Refresh live "updated ... ago" footer every second
+    _lastFooterUpdate = millis();
+    drawCurrentScreen();
   }
 }

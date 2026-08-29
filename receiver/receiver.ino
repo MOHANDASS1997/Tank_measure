@@ -4,6 +4,8 @@
 #include "config/LoRaConfig.h"
 #include "config/PacketConfig.h"
 #include "config/TankConfig.h"
+#include "config/WiFiConfig.h"
+#include "config/TimeConfig.h"
 
 #include "models/Telemetry.h"
 #include "models/DisplayData.h"
@@ -13,6 +15,10 @@
 #include "tank/TankProcessor.h"
 #include "display/DisplayManager.h"
 #include "input/ButtonManager.h"
+#include "wifi/WiFiManager.h"
+#include "time/TimeManager.h"
+#include "storage/StorageManager.h"
+#include "mock/MockDataManager.h"
 
 // Arduino IDE ignores .cpp files located in subdirectories unless included:
 #include "protocol/PacketParser.cpp"
@@ -20,6 +26,10 @@
 #include "tank/TankProcessor.cpp"
 #include "display/DisplayManager.cpp"
 #include "input/ButtonManager.cpp"
+#include "wifi/WiFiManager.cpp"
+#include "time/TimeManager.cpp"
+#include "storage/StorageManager.cpp"
+#include "mock/MockDataManager.cpp"
 
 // =====================================================
 // =====================================================
@@ -41,7 +51,7 @@ void setup() {
   );
 
   Serial.println(
-    "Tank_sync Receiver"
+    "DASS HOME Receiver"
   );
 
   Serial.println(
@@ -58,11 +68,40 @@ void setup() {
   // Initialize button input
   buttonManager.begin();
 
-  // Initial UI state
-  displayManager.showNotConnected();
+  // =====================================================
+  // STEP 1: WI-FI STATUS CHECK & SETUP SCREEN
+  // (Executes first before LoRa and any data checks)
+  // =====================================================
+  wifiManager.begin();
+  wifiManager.runStartupFlow(displayManager, buttonManager);
 
-  // Initialize LoRa radio
-  loraManager.begin();
+  // Initialize NTP time synchronization
+  timeManager.begin();
+
+  // =====================================================
+  // STEP 2: RESTORE TELEMETRY FROM PERSISTENT STORAGE
+  // =====================================================
+  DisplayData cachedData;
+  uint32_t savedTimestamp = 0;
+  bool hasSavedData = storageManager.load(cachedData, savedTimestamp, USE_MOCK_DATA);
+
+  if (hasSavedData) {
+    Serial.println("Restored telemetry data from storage. Displaying immediately.");
+    displayManager.updateData(cachedData);
+  } else {
+    Serial.println("No stored matching telemetry found. Showing waiting screen.");
+    displayManager.showNotConnected();
+  }
+
+  // =====================================================
+  // STEP 3: INITIALIZE DATA SOURCE (LORA / MOCK)
+  // =====================================================
+  if (USE_MOCK_DATA) {
+    mockDataManager.begin();
+    Serial.println("Mock Data Mode: ACTIVE (Sending simulated telemetry every 1 min).");
+  } else {
+    loraManager.begin();
+  }
 
   Serial.println();
   Serial.println(
@@ -70,7 +109,7 @@ void setup() {
   );
 
   Serial.println(
-    "Waiting for Tank_sync packets..."
+    "Waiting for DASS HOME packets..."
   );
 }
 
@@ -85,18 +124,19 @@ void loop() {
   // Handle button input & page navigation
   buttonManager.update();
 
-  // Check for incoming LoRa packet
+  // Check for incoming packet (LoRa or Mock Data Layer)
   RawTelemetry raw;
   int rssi = 0;
   int snr = 0;
+  bool packetReceived = false;
 
-  if (
-    loraManager.receive(
-      raw,
-      rssi,
-      snr
-    )
-  ) {
+  if (USE_MOCK_DATA) {
+    packetReceived = mockDataManager.poll(raw, rssi, snr);
+  } else {
+    packetReceived = loraManager.receive(raw, rssi, snr);
+  }
+
+  if (packetReceived) {
 
     DisplayData data;
 
@@ -109,13 +149,20 @@ void loop() {
       )
     ) {
 
+      // Attach current NTP epoch timestamp
+      data.timestamp = timeManager.getEpoch();
+
+      // Persist latest telemetry to NVS flash across power cycles with data mode tag
+      storageManager.save(data, data.timestamp, USE_MOCK_DATA);
+
+      // Update in-memory cache and refresh display
       displayManager.updateData(
         data
       );
     }
   }
 
-  // Update animations and check connection timeout
+  // Update animations and dynamic footer elapsed time
   displayManager.update();
 
   delay(5);

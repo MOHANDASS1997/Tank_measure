@@ -1,6 +1,6 @@
-# TankSync
+# DASS HOME
 
-TankSync is a wireless water-tank monitoring system built around ESP32 and LoRa.
+DASS HOME is a wireless water-tank monitoring system built around ESP32 and LoRa.
 
 The system uses a low-power transmitter installed near the water tank to measure tank level and transmitter battery status. The measurements are transmitted wirelessly to an ESP32-based receiver, which processes the telemetry and displays the current tank and battery status on an OLED display.
 
@@ -11,7 +11,7 @@ The project is designed with a focus on:
 * Simple and reliable telemetry
 * Expandability to multiple tanks/transmitters
 * Maintainable firmware architecture
-* A simple local display without requiring Wi-Fi or cloud services
+* Wi-Fi captive setup with OLED and local IP display
 
 ---
 
@@ -49,13 +49,14 @@ The transmitter periodically measures the tank and sends a telemetry packet.
 
 The receiver:
 
-1. Receives the LoRa packet.
-2. Validates the packet.
-3. Identifies the transmitter.
-4. Maps the transmitter to its configured tank.
-5. Calculates tank percentage and volume.
-6. Calculates battery percentage.
-7. Displays the processed information.
+1. Connects to Wi-Fi (or provides a captive setup portal with IP on OLED).
+2. Receives the LoRa packet.
+3. Validates the packet.
+4. Identifies the transmitter.
+5. Maps the transmitter to its configured tank.
+6. Calculates tank percentage and volume.
+7. Calculates battery percentage.
+8. Displays the processed information.
 
 ---
 
@@ -68,13 +69,14 @@ The current receiver implementation supports:
 * ESP32
 * RYLR998 LoRa module
 * SH1106 128×64 OLED
+* Wi-Fi status check, captive setup portal, and IP display
 * Tank level calculation
 * Battery voltage and percentage
 * Charging status
 * RSSI
 * SNR
 * Tank/transmitter configuration tables
-* Versioned TankSync application packets
+* Versioned DASS HOME application packets
 * Packet validation
 * OLED tank screen
 * OLED battery screen
@@ -89,7 +91,7 @@ The transmitter is being developed alongside the receiver with low-power operati
 # Repository Structure
 
 ```text
-TankSync/
+DASS HOME/
 │
 ├── transmitter/
 │   └── Transmitter firmware
@@ -106,7 +108,7 @@ TankSync/
 └── README.md
 ```
 
-The transmitter and receiver are intentionally kept in the same repository because they are two parts of the same system and share the TankSync application protocol.
+The transmitter and receiver are intentionally kept in the same repository because they are two parts of the same system and share the DASS HOME application protocol.
 
 ---
 
@@ -125,7 +127,8 @@ receiver/
 │   ├── BoardConfig.h
 │   ├── LoRaConfig.h
 │   ├── PacketConfig.h
-│   └── TankConfig.h
+│   ├── TankConfig.h
+│   └── WiFiConfig.h
 │
 ├── models/
 │   ├── Telemetry.h
@@ -134,6 +137,10 @@ receiver/
 ├── lora/
 │   ├── LoRaManager.h
 │   └── LoRaManager.cpp
+│
+├── wifi/
+│   ├── WiFiManager.h
+│   └── WiFiManager.cpp
 │
 ├── protocol/
 │   ├── PacketParser.h
@@ -157,6 +164,8 @@ The main `.ino` file acts primarily as the application coordinator.
 The major responsibilities are separated into:
 
 ```text
+WiFiManager
+    ↓
 LoRaManager
     ↓
 PacketParser
@@ -176,6 +185,8 @@ For example:
 | LoRa settings                  | `config/LoRaConfig.h`        |
 | Packet requirements            | `config/PacketConfig.h`      |
 | Tank/transmitter configuration | `config/TankConfig.h`        |
+| Wi-Fi settings & timeouts      | `config/WiFiConfig.h`        |
+| Wi-Fi setup & portal           | `wifi/WiFiManager.cpp`       |
 | Packet format                  | `protocol/PacketParser.cpp`  |
 | Tank calculations              | `tank/TankProcessor.cpp`     |
 | OLED layout                    | `display/DisplayManager.cpp` |
@@ -185,7 +196,7 @@ For example:
 
 # Communication
 
-TankSync uses a two-layer packet structure.
+DASS HOME uses a two-layer packet structure.
 
 The RYLR998 provides the radio transport envelope:
 
@@ -193,7 +204,7 @@ The RYLR998 provides the radio transport envelope:
 +RCV=<address>,<length>,<data>,<RSSI>,<SNR>
 ```
 
-Inside the LoRa payload is the TankSync application packet:
+Inside the LoRa payload is the DASS HOME application packet:
 
 ```text
 TS|v=1|id=1|seq=123|dist=43.2|bat=3.87|chg=0
@@ -203,7 +214,7 @@ Where:
 
 | Field  | Meaning                 |
 | ------ | ----------------------- |
-| `TS`   | TankSync packet header  |
+| `TS`   | DASS HOME packet header |
 | `v`    | Protocol version        |
 | `id`   | Transmitter ID          |
 | `seq`  | Packet sequence number  |
@@ -310,6 +321,7 @@ Required libraries for the current receiver include:
 * ESP32 Arduino core
 * U8g2
 * Wire
+* WiFi, WebServer, DNSServer, Preferences (Built-in to ESP32 Core)
 
 The LoRa module communicates with the ESP32 through UART.
 
@@ -354,6 +366,7 @@ receiver/config/BoardConfig.h
 receiver/config/LoRaConfig.h
 receiver/config/PacketConfig.h
 receiver/config/TankConfig.h
+receiver/config/WiFiConfig.h
 ```
 
 For example, adding another transmitter should primarily require updating the transmitter configuration table rather than changing the processing logic.
@@ -362,7 +375,7 @@ For example, adding another transmitter should primarily require updating the tr
 
 # Power Management
 
-Low-power operation is an important part of the TankSync design.
+Low-power operation is an important part of the DASS HOME design.
 
 The transmitter is intended to spend most of its time in ESP32 deep sleep and periodically wake up to:
 
@@ -381,7 +394,7 @@ Power-management behavior is under active development.
 
 # Design Principles
 
-TankSync follows several design principles.
+DASS HOME follows several design principles.
 
 ### 1. Separate configuration from logic
 
@@ -389,7 +402,7 @@ Physical configuration should not be scattered throughout the firmware.
 
 ### 2. Separate transport from application protocol
 
-RYLR998 communication and TankSync packet parsing are treated as different layers.
+RYLR998 communication and DASS HOME packet parsing are treated as different layers.
 
 ### 3. Keep hardware-specific code isolated
 
@@ -405,7 +418,7 @@ The project should remain understandable and lightweight enough for ESP32-class 
 
 ### 6. Avoid unnecessary dependencies
 
-The project should not require cloud services or a network connection for its core functionality.
+The core monitoring functionality is self-contained.
 
 ---
 
@@ -448,6 +461,9 @@ Change tank calculation
 Change LoRa configuration
     → receiver/config/
 
+Change Wi-Fi configuration
+    → receiver/config/
+
 Change GPIO
     → receiver/config/
 
@@ -464,7 +480,7 @@ Avoid putting unrelated functionality into `receiver.ino` or `transmitter.ino`.
 
 # Repository Status
 
-This repository represents the development version of TankSync.
+This repository represents the development version of DASS HOME.
 
 Hardware, packet formats and firmware behavior may change as the project evolves.
 

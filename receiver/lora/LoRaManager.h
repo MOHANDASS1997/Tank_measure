@@ -6,6 +6,7 @@
 #include "../config/LoRaConfig.h"
 #include "../models/Telemetry.h"
 #include "../protocol/PacketParser.h"
+#include "../display/DisplayManager.h"
 
 // =====================================================
 //                     LORA MANAGER
