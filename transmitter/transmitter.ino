@@ -1,114 +1,116 @@
-#define TRIG_PIN 4
-#define ECHO_PIN 3
+// =====================================================
+//                 DASS HOME - TRANSMITTER
+//                  (ESP32-C3 Supermini)
+// =====================================================
 
-#define LORA_RX_PIN 6   // ESP32 receives from RYLR998 TXD
-#define LORA_TX_PIN 7   // ESP32 transmits to RYLR998 RXD
+#include "config/BoardConfig.h"
+#include "config/SensorConfig.h"
+#include "config/TransmitterConfig.h"
 
-HardwareSerial LoRaSerial(1);
+#include "battery/BatteryManager.h"
+#include "lora/TransmitterLoRaManager.h"
+#include "sensor/SensorManager.h"
+#include "sleep/SleepManager.h"
 
-void sendAT(const char* command) {
-  Serial.print(">>> ");
-  Serial.println(command);
+// Explicit .cpp includes for Arduino IDE multi-directory support
+#include "battery/BatteryManager.cpp"
+#include "lora/TransmitterLoRaManager.cpp"
+#include "sensor/SensorManager.cpp"
+#include "sleep/SleepManager.cpp"
 
-  LoRaSerial.print(command);
-  LoRaSerial.print("\r\n");
+// =====================================================
+//             PROCESS & TRANSMIT TELEMETRY
+// =====================================================
 
-  unsigned long start = millis();
+void processAndTransmit() {
+  // 1. Measure Ultrasonic Distance (with multi-sample filtering)
+  Serial.println("\n--- Starting Measurement Cycle ---");
+  Serial.println("Reading ultrasonic distance...");
+  float distanceCm = sensorManager.measureFilteredDistanceCm();
 
-  while (millis() - start < 1000) {
-    while (LoRaSerial.available()) {
-      Serial.write(LoRaSerial.read());
-    }
-  }
-
-  Serial.println();
-  Serial.println("------------------------------");
-}
-
-void setup() {
-  Serial.begin(115200);
-
-  // ==========================================
-  // ULTRASONIC SENSOR — KEEP AS IS
-  // ==========================================
-
-  pinMode(TRIG_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
-
-  digitalWrite(TRIG_PIN, LOW);
-
-
-  // ==========================================
-  // RYLR998 — NEW
-  // ==========================================
-
-  LoRaSerial.begin(
-    115200,
-    SERIAL_8N1,
-    LORA_RX_PIN,
-    LORA_TX_PIN
-  );
-
-  delay(2000);
-
-
-  // ==========================================
-  // STARTUP MESSAGE
-  // ==========================================
-
-  Serial.println();
-  Serial.println("================================");
-  Serial.println("     DASS HOME - TX TEST");
-  Serial.println("================================");
-  Serial.println();
-
-
-  // ==========================================
-  // RYLR998 DIAGNOSTIC
-  // ==========================================
-
-  sendAT("AT");
-  sendAT("AT+ADDRESS?");
-  sendAT("AT+NETWORKID?");
-  sendAT("AT+BAND?");
-  sendAT("AT+PARAMETER?");
-}
-
-void loop() {
-
-  // ==================================================
-  // 1. Measure ultrasonic distance
-  // ==================================================
-
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-
-  unsigned long duration = pulseIn(ECHO_PIN, HIGH, 30000);
-
-  if (duration == 0) {
-    Serial.println("Distance: No echo");
-  } 
-  else {
-    float distance = duration / 58.0;
-
-    Serial.print("Distance: ");
-    Serial.print(distance, 1);
+  if (distanceCm < 0.0f) {
+    Serial.println("Warning: Ultrasonic echo timeout / no echo detected.");
+  } else {
+    Serial.print("Measured Distance: ");
+    Serial.print(distanceCm, 1);
     Serial.println(" cm");
   }
 
+  // 2. Read / Generate Battery Telemetry
+  float batteryVoltage = 0.0f;
+  bool isCharging = false;
+  batteryManager.readBattery(batteryVoltage, isCharging);
 
-  // ==================================================
-  // 2. Check for anything received from RYLR998
-  // ==================================================
+  Serial.print("Battery Voltage: ");
+  Serial.print(batteryVoltage, 2);
+  Serial.print(" V, Charging: ");
+  Serial.println(isCharging ? "YES" : "NO");
 
-  while (LoRaSerial.available()) {
-    Serial.print("LoRa RX: ");
-    Serial.write(LoRaSerial.read());
+  // 3. Get Next Sequence Number (with automatic rollover protection)
+  unsigned long sequence = sleepManager.getNextSequenceNumber();
+  Serial.print("Packet Sequence: ");
+  Serial.println(sequence);
+
+  // 4. Transmit Telemetry Packet via LoRa to Receiver (Address 3001)
+  if (distanceCm > 0.0f) {
+    transmitterLoRaManager.sendTelemetry(sequence, distanceCm, batteryVoltage,
+                                         isCharging);
+  } else {
+    Serial.println("Skipping transmission due to invalid sensor reading.");
+  }
+}
+
+// =====================================================
+//                       SETUP
+// =====================================================
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  Serial.println();
+  Serial.println("==================================================");
+  Serial.println("         DASS HOME - TRANSMITTER (ESP32-C3)       ");
+  Serial.println("==================================================");
+
+  // 1. Initialize Sleep / RTC State
+  sleepManager.begin();
+
+  // 2. Initialize Hardware Subsystems
+  sensorManager.begin();
+  batteryManager.begin();
+  transmitterLoRaManager.begin();
+
+  // 3. Configure LoRa Module on first boot
+  if (sleepManager.getBootCount() == 1 || !ENABLE_DEEP_SLEEP) {
+    transmitterLoRaManager.configure();
   }
 
-  delay(1000);
+  if (ENABLE_DEEP_SLEEP) {
+    Serial.println("Mode: DEEP SLEEP (Production)");
+    processAndTransmit();
+
+    // Enter Deep Sleep for configured duration
+    sleepManager.goToDeepSleep(DEEP_SLEEP_SECONDS);
+  } else {
+    Serial.println("Mode: DELAY LOOP (Testing / Continuous Serial Debugging)");
+    // Run first transmission cycle immediately
+    processAndTransmit();
+  }
+}
+
+// =====================================================
+//                        LOOP
+// =====================================================
+
+void loop() {
+  if (!ENABLE_DEEP_SLEEP) {
+    Serial.print("Waiting ");
+    Serial.print(TRANSMIT_INTERVAL_SECONDS);
+    Serial.println(" seconds before next transmission...");
+
+    delay(TRANSMIT_INTERVAL_SECONDS * 1000UL);
+
+    processAndTransmit();
+  }
 }

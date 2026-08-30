@@ -31,11 +31,14 @@ String LoRaManager::command(
     cmd
   );
 
-  _loraSerial.println(
+  _loraSerial.print(
     cmd
   );
+  _loraSerial.print(
+    "\r\n"
+  );
 
-  String response;
+  String response = "";
 
   unsigned long start =
     millis();
@@ -53,7 +56,9 @@ String LoRaManager::command(
       char c =
         _loraSerial.read();
 
-      response += c;
+      if ((c >= 32 && c <= 126) || c == '\r' || c == '\n') {
+        response += c;
+      }
     }
 
     // Exit immediately once RYLR998 responds with +OK, +ERR, or line termination
@@ -65,8 +70,6 @@ String LoRaManager::command(
       break;
     }
 
-    // Keep display animations rendering smoothly during startup
-    displayManager.update();
     delay(2);
   }
 
@@ -89,6 +92,11 @@ String LoRaManager::command(
 
 void LoRaManager::begin() {
 
+  pinMode(
+    LORA_RX,
+    INPUT_PULLUP
+  );
+
   _loraSerial.begin(
     loraConfig.baudRate,
     SERIAL_8N1,
@@ -96,114 +104,58 @@ void LoRaManager::begin() {
     LORA_TX
   );
 
-  // Quick initial delay while keeping display alive
-  unsigned long start = millis();
-  while (millis() - start < 100) {
-    displayManager.update();
-    delay(5);
-  }
+  delay(100);
 
-  command(
-    "AT",
-    250
-  );
+  Serial.println("Configuring RYLR998 Receiver...");
+
+  command("AT", 500);
+  delay(50);
 
   // ---------------------------------------------------
   // Receiver address
   // ---------------------------------------------------
-
-  String cmd =
-    "AT+ADDRESS=" +
-    String(
-      loraConfig.address
-    );
-
-  command(
-    cmd.c_str()
-  );
+  String cmd = "AT+ADDRESS=" + String(loraConfig.address);
+  command(cmd.c_str(), 500);
+  delay(50);
 
   // ---------------------------------------------------
   // Network ID
   // ---------------------------------------------------
-
-  cmd =
-    "AT+NETWORKID=" +
-    String(
-      loraConfig.networkId
-    );
-
-  command(
-    cmd.c_str()
-  );
+  cmd = "AT+NETWORKID=" + String(loraConfig.networkId);
+  command(cmd.c_str(), 500);
+  delay(50);
 
   // ---------------------------------------------------
   // Band
   // ---------------------------------------------------
-
-  cmd =
-    "AT+BAND=" +
-    String(
-      loraConfig.band
-    );
-
-  command(
-    cmd.c_str()
-  );
+  cmd = "AT+BAND=" + String(loraConfig.band);
+  command(cmd.c_str(), 500);
+  delay(50);
 
   // ---------------------------------------------------
   // RF parameters
   // ---------------------------------------------------
-
-  cmd =
-    "AT+PARAMETER=" +
-    String(
-      loraConfig.spreadingFactor
-    ) +
-    "," +
-    String(
-      loraConfig.bandwidth
-    ) +
-    "," +
-    String(
-      loraConfig.codingRate
-    ) +
-    "," +
-    String(
-      loraConfig.preambleLength
-    );
-
-  command(
-    cmd.c_str()
-  );
+  cmd = "AT+PARAMETER=" +
+        String(loraConfig.spreadingFactor) + "," +
+        String(loraConfig.bandwidth) + "," +
+        String(loraConfig.codingRate) + "," +
+        String(loraConfig.preambleLength);
+  command(cmd.c_str(), 500);
+  delay(50);
 
   // ===================================================
   // Verify
   // ===================================================
-
   Serial.println();
-  Serial.println(
-    "========== LoRa Config =========="
-  );
-
-  command(
-    "AT+ADDRESS?"
-  );
-
-  command(
-    "AT+NETWORKID?"
-  );
-
-  command(
-    "AT+BAND?"
-  );
-
-  command(
-    "AT+PARAMETER?"
-  );
-
-  Serial.println(
-    "=================================="
-  );
+  Serial.println("========== LoRa Config ==========");
+  command("AT+ADDRESS?", 500);
+  delay(50);
+  command("AT+NETWORKID?", 500);
+  delay(50);
+  command("AT+BAND?", 500);
+  delay(50);
+  command("AT+PARAMETER?", 500);
+  Serial.println("==================================");
 }
 
 // =====================================================
@@ -478,11 +430,19 @@ bool LoRaManager::receive(
     _loraSerial.available()
   ) {
 
-    String line =
+    String rawLine =
       _loraSerial.readStringUntil(
         '\n'
       );
 
+    // Filter out RF EMI framing noise and non-printable bytes
+    String line = "";
+    for (size_t i = 0; i < rawLine.length(); i++) {
+      char c = rawLine[i];
+      if ((c >= 32 && c <= 126) || c == '\r') {
+        line += c;
+      }
+    }
     line.trim();
 
     if (
@@ -492,15 +452,19 @@ bool LoRaManager::receive(
       continue;
     }
 
+    int rcvIndex =
+      line.indexOf("+RCV=");
+
     if (
-      line.startsWith(
-        "+RCV="
-      )
+      rcvIndex >= 0
     ) {
+
+      String cleanRCV =
+        line.substring(rcvIndex);
 
       if (
         parseLoRaReceive(
-          line,
+          cleanRCV,
           raw,
           rssi,
           snr
@@ -514,14 +478,24 @@ bool LoRaManager::receive(
 
     else {
 
-      // Other RYLR998 responses are ignored.
-      Serial.print(
-        "LoRa: "
-      );
+      // Only print debug if line contains meaningful text
+      bool hasReadable = false;
+      for (size_t i = 0; i < line.length(); i++) {
+        if (isAlphaNumeric(line[i])) {
+          hasReadable = true;
+          break;
+        }
+      }
 
-      Serial.println(
-        line
-      );
+      if (hasReadable) {
+        Serial.print(
+          "LoRa: "
+        );
+
+        Serial.println(
+          line
+        );
+      }
     }
   }
 

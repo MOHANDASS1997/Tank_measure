@@ -76,7 +76,7 @@ private:
 
   float _waitAnimAngle;
   unsigned long _lastWaitAnimUpdate;
-  static const unsigned long WAIT_ANIM_INTERVAL_MS = 40;
+  static const unsigned long WAIT_ANIM_INTERVAL_MS = 250;
 
   unsigned long _lastFooterUpdate;
 
