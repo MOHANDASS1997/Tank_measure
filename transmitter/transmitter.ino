@@ -51,7 +51,12 @@ void processAndTransmit() {
   Serial.print("Packet Sequence: ");
   Serial.println(sequence);
 
-  // 4. Transmit Telemetry Packet via LoRa to Receiver (Address 3001)
+  // 4. Stagger delay before LoRa transmission to allow power rail / capacitors to stabilize
+  if (TX_POST_SENSOR_DELAY_MS > 0) {
+    delay(TX_POST_SENSOR_DELAY_MS);
+  }
+
+  // 5. Transmit Telemetry Packet via LoRa to Receiver (Address 3001)
   if (distanceCm > 0.0f) {
     transmitterLoRaManager.sendTelemetry(sequence, distanceCm, batteryVoltage,
                                          isCharging);

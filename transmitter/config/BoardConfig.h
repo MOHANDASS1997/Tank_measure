@@ -18,10 +18,10 @@
 // =====================================================
 // Set to true for ultra-low power deep sleep (production)
 // Set to false for standard delay loop (testing / continuous serial debugging)
-#define ENABLE_DEEP_SLEEP false
+#define ENABLE_DEEP_SLEEP true
 
 // Transmission & Sleep Intervals (in seconds)
 #define TRANSMIT_INTERVAL_SECONDS                                              \
-  300 // Delay interval when ENABLE_DEEP_SLEEP is false (1 minute)
+  30 // Delay interval when ENABLE_DEEP_SLEEP is false (1 minute)
 #define DEEP_SLEEP_SECONDS                                                     \
   60 // Deep sleep duration when ENABLE_DEEP_SLEEP is true (1 minute)

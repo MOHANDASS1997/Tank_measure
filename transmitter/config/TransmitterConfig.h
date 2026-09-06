@@ -29,13 +29,17 @@ const TransmitterLoRaConfig txConfig = {
     7,           // BW
     1,           // CR
     12,          // Preamble
-    5,           // RF Output Power (0 dBm = ~1 mW, minimum current draw)
+    20,          // RF Output Power (0 dBm = ~1 mW, minimum current draw)
     115200       // Baud rate
 };
 
 // Protocol Parameters
 const char *const TX_PACKET_HEADER = "TS";
 const int TX_PACKET_VERSION = 1;
+
+// Stagger delay between sensor acquisition and LoRa transmission (in ms)
+// Allows power rail and decoupling capacitors to stabilize, reducing peak current
+const unsigned long TX_POST_SENSOR_DELAY_MS = 200;
 
 // Maximum sequence number before resetting to 1 (prevents unbounded character
 // growth/overflow)
