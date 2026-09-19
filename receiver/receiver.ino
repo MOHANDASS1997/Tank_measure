@@ -6,6 +6,7 @@
 #include "config/TankConfig.h"
 #include "config/WiFiConfig.h"
 #include "config/TimeConfig.h"
+#include "config/BatteryLedConfig.h"
 
 #include "models/Telemetry.h"
 #include "models/DisplayData.h"
@@ -19,6 +20,7 @@
 #include "time/TimeManager.h"
 #include "storage/StorageManager.h"
 #include "mock/MockDataManager.h"
+#include "battery/BatteryLedManager.h"
 
 // Arduino IDE ignores .cpp files located in subdirectories unless included:
 #include "protocol/PacketParser.cpp"
@@ -30,6 +32,7 @@
 #include "time/TimeManager.cpp"
 #include "storage/StorageManager.cpp"
 #include "mock/MockDataManager.cpp"
+#include "battery/BatteryLedManager.cpp"
 
 // =====================================================
 // =====================================================
@@ -64,6 +67,9 @@ void setup() {
 
   // Initialize display
   displayManager.begin();
+
+  // Initialize battery LED indicator & INA219 monitor
+  batteryLedManager.begin();
 
   // Initialize button input
   buttonManager.begin();
@@ -120,6 +126,9 @@ void setup() {
 // =====================================================
 
 void loop() {
+
+  // Update battery LED indicator & INA219 monitoring
+  batteryLedManager.update();
 
   // Handle button input & page navigation
   buttonManager.update();
