@@ -142,18 +142,19 @@ void loop() {
   // Update battery LED indicator & INA219 monitoring
   batteryLedManager.update();
 
-#if TEST_MODE
-  // Handle button input for test screen navigation
-  buttonManager.update();
-
-  // Render current active test screen with live data
-  displayManager.updateTestScreen(batteryLedManager);
-  delay(30);
-  return;
-#endif
+  // Detect transition into charging and trigger charging animation
+  displayManager.checkChargingTransition(batteryLedManager.isCharging());
 
   // Handle button input & page navigation
   buttonManager.update();
+
+  // Unified display update (handles test screens, normal screens, animations & timeouts)
+  displayManager.update();
+
+#if TEST_MODE
+  delay(5);
+  return;
+#endif
 
   // Check for incoming packet (LoRa or Mock Data Layer)
   RawTelemetry raw;

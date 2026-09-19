@@ -31,3 +31,12 @@
 // In Test Mode, only test screens are displayed and can be navigated
 // using the page navigation button. Set to false for normal operation.
 #define TEST_MODE false
+// =====================================================
+//             DISPLAY & UI TIMEOUT CONFIG
+// =====================================================
+// Inactivity timeout before OLED (and LEDs when discharging) turns OFF
+// (default: 15s)
+#define UI_TIMEOUT_MS 15000
+
+// Duration of the non-blocking charging splash animation (in milliseconds)
+#define CHARGING_ANIMATION_DURATION_MS 2500

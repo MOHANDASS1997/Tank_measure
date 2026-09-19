@@ -9,6 +9,14 @@ DisplayManager::DisplayManager()
     _currentPage(PAGE_TANK),
     _testMode(false),
     _currentTestScreen(TEST_SCREEN_INA219),
+    _displayAwake(true),
+    _lastUiActivityTime(0),
+    _uiTimeoutMs(UI_TIMEOUT_MS),
+    _chargingAnimationActive(false),
+    _chargingAnimationStart(0),
+    _savedPageBeforeAnimation(PAGE_TANK),
+    _savedTestScreenBeforeAnimation(TEST_SCREEN_INA219),
+    _lastChargingState(false),
     _screenW(128),
     _screenH(64),
     _minDim(64),
@@ -86,6 +94,9 @@ void DisplayManager::begin() {
   Serial.println(
     _screenH
   );
+
+  _lastUiActivityTime = millis();
+  _lastChargingState = batteryLedManager.isCharging();
 }
 
 // =====================================================
@@ -457,6 +468,10 @@ void DisplayManager::drawWaitingAnimation(
 // =====================================================
 
 void DisplayManager::drawNotConnectedScreen() {
+
+  if (!_displayAwake || _chargingAnimationActive) {
+    return;
+  }
 
   _display.clearBuffer();
 
@@ -1403,6 +1418,16 @@ void DisplayManager::drawBatteryScreen(
 
 void DisplayManager::drawCurrentScreen() {
 
+  if (!_displayAwake || _chargingAnimationActive) {
+    return;
+  }
+
+  // If in test mode, render active test screen directly
+  if (_testMode) {
+    updateTestScreen();
+    return;
+  }
+
   if (
     !_displayData.valid
   ) {
@@ -1446,7 +1471,9 @@ void DisplayManager::updateData(const DisplayData& data) {
   _displayData = data;
   _lastFooterUpdate = millis();
   startAnimation();
-  drawCurrentScreen();
+  if (_displayAwake && !_chargingAnimationActive) {
+    drawCurrentScreen();
+  }
 }
 
 void DisplayManager::showNotConnected() {
@@ -1515,6 +1542,106 @@ void DisplayManager::switchPage() {
 }
 
 // =====================================================
+//             UI TIMEOUT & POWER MANAGEMENT
+// =====================================================
+
+bool DisplayManager::isAwake() const {
+  return _displayAwake;
+}
+
+void DisplayManager::wakeDisplay() {
+  _displayAwake = true;
+  _display.setPowerSave(0);
+  _lastUiActivityTime = millis();
+  batteryLedManager.setLedsEnabled(true);
+
+  drawCurrentScreen();
+}
+
+void DisplayManager::sleepDisplay() {
+  _displayAwake = false;
+  _display.setPowerSave(1);
+
+  // If not charging, turn OFF all LEDs
+  if (!batteryLedManager.isCharging()) {
+    batteryLedManager.setLedsEnabled(false);
+  }
+}
+
+void DisplayManager::resetTimeout() {
+  _lastUiActivityTime = millis();
+}
+
+// =====================================================
+//           CHARGING TRANSITION & ANIMATION
+// =====================================================
+
+bool DisplayManager::isChargingAnimationActive() const {
+  return _chargingAnimationActive;
+}
+
+void DisplayManager::startChargingAnimation() {
+  _chargingAnimationActive = true;
+  _chargingAnimationStart = millis();
+  _savedPageBeforeAnimation = _currentPage;
+  _savedTestScreenBeforeAnimation = _currentTestScreen;
+
+  // Turn OLED ON if it was OFF
+  if (!_displayAwake) {
+    _display.setPowerSave(0);
+    _displayAwake = true;
+  }
+
+  // Ensure LEDs are enabled
+  batteryLedManager.setLedsEnabled(true);
+
+  drawChargingAnimation();
+}
+
+void DisplayManager::checkChargingTransition(bool currentlyCharging) {
+  if (!_lastChargingState && currentlyCharging) {
+    startChargingAnimation();
+  }
+  _lastChargingState = currentlyCharging;
+}
+
+void DisplayManager::drawChargingAnimation() {
+  _display.clearBuffer();
+
+  // 1. Header: "CHARGING"
+  _display.setFont(u8g2_font_6x10_tr);
+  const char* title = "CHARGING";
+  int tw = _display.getStrWidth(title);
+  _display.drawStr((_screenW - tw) / 2, 11, title);
+
+  // 2. Center: Battery Outline & Terminal Nub
+  int bx = 28;
+  int by = 16;
+  int bw = 66;
+  int bh = 28;
+  _display.drawRFrame(bx, by, bw, bh, 3);
+  _display.drawRBox(bx + bw, by + 7, 5, bh - 14, 2);
+
+  // 3. Filling Blocks inside battery cell
+  unsigned long elapsed = millis() - _chargingAnimationStart;
+  int activeBlocks = ((elapsed % 1200) / 240) + 1;
+  if (activeBlocks > 4) activeBlocks = 4;
+
+  for (int b = 0; b < activeBlocks; b++) {
+    _display.drawBox(bx + 4 + b * 15, by + 4, 12, bh - 8);
+  }
+
+  // 4. Footer: Live Voltage and Battery Percentage
+  _display.setFont(u8g2_font_5x8_tr);
+  char statBuf[32];
+  snprintf(statBuf, sizeof(statBuf), "%.2fV  -  %.0f%%", batteryLedManager.getVoltage(), batteryLedManager.getBatteryPercent());
+  int sw = _display.getStrWidth(statBuf);
+  _display.drawStr((_screenW - sw) / 2, 58, statBuf);
+
+  _display.sendBuffer();
+}
+
+// =====================================================
 //                 TEST MODE CONTROLLER
 // =====================================================
 
@@ -1534,11 +1661,14 @@ void DisplayManager::switchTestScreen() {
   }
 }
 
-TestScreen DisplayManager::getCurrentTestScreen() const {
-  return _currentTestScreen;
+void DisplayManager::updateTestScreen() {
+  updateTestScreen(batteryLedManager);
 }
 
 void DisplayManager::updateTestScreen(const BatteryLedManager& batteryLed) {
+  if (!_displayAwake || _chargingAnimationActive) {
+    return;
+  }
   switch (_currentTestScreen) {
     case TEST_SCREEN_INA219:
     default:
@@ -1548,13 +1678,60 @@ void DisplayManager::updateTestScreen(const BatteryLedManager& batteryLed) {
 }
 
 void DisplayManager::update() {
+  unsigned long now = millis();
 
+  // 1. Handle Charging Animation if running
+  if (_chargingAnimationActive) {
+    if (now - _chargingAnimationStart >= CHARGING_ANIMATION_DURATION_MS) {
+      _chargingAnimationActive = false;
+      // Restore previously active page
+      _currentPage = _savedPageBeforeAnimation;
+      _currentTestScreen = _savedTestScreenBeforeAnimation;
+      // Start fresh 15-second display timeout
+      _lastUiActivityTime = millis();
+      // Redraw restored page
+      drawCurrentScreen();
+    } else {
+      // Redraw animation frame at ~30 FPS (every 33ms)
+      static unsigned long lastAnimFrame = 0;
+      if (now - lastAnimFrame >= 33) {
+        lastAnimFrame = now;
+        drawChargingAnimation();
+      }
+    }
+    return;
+  }
+
+  // 2. Handle UI Inactivity Timeout
+  if (_displayAwake) {
+    if (now - _lastUiActivityTime >= _uiTimeoutMs) {
+      sleepDisplay();
+    }
+  }
+
+  // If display is asleep, do not render screens
+  if (!_displayAwake) {
+    return;
+  }
+
+  // 3. Screen Rendering
+  if (_testMode) {
+    // In Test Mode: update live test screen at ~30 FPS (every 33ms)
+    static unsigned long lastTestScreenUpdate = 0;
+    if (now - lastTestScreenUpdate >= 33) {
+      lastTestScreenUpdate = now;
+      drawCurrentScreen();
+    }
+    return;
+  }
+
+  // Normal mode screen rendering / animations
   updateAnimation();
 
   if (!_displayData.valid) {
     // Animate hourglass sand timer when waiting for transmitter
-    if (millis() - _lastWaitAnimUpdate >= WAIT_ANIM_INTERVAL_MS) {
-      _lastWaitAnimUpdate = millis();
+    if (now - _lastWaitAnimUpdate >= WAIT_ANIM_INTERVAL_MS) {
+      _lastWaitAnimUpdate = now;
       _waitAnimAngle += 5.0f;
       if (_waitAnimAngle >= 360.0f) {
         _waitAnimAngle -= 360.0f;
@@ -1563,9 +1740,9 @@ void DisplayManager::update() {
     }
   } else if (_animationActive) {
     drawCurrentScreen();
-  } else if (millis() - _lastFooterUpdate >= 1000) {
+  } else if (now - _lastFooterUpdate >= 1000) {
     // Refresh live "updated ... ago" footer every second
-    _lastFooterUpdate = millis();
+    _lastFooterUpdate = now;
     drawCurrentScreen();
   }
 }

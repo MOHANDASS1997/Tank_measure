@@ -54,7 +54,20 @@ public:
   bool isTestMode() const;
   void switchTestScreen();
   TestScreen getCurrentTestScreen() const;
+  void updateTestScreen();
   void updateTestScreen(const BatteryLedManager& batteryLed);
+
+  // UI Timeout & Power Saving
+  bool isAwake() const;
+  void wakeDisplay();
+  void sleepDisplay();
+  void resetTimeout();
+
+  // Charging Animation & Transition
+  bool isChargingAnimationActive() const;
+  void startChargingAnimation();
+  void checkChargingTransition(bool currentlyCharging);
+  void drawChargingAnimation();
 
   void drawCurrentScreen();
   void drawNotConnectedScreen();
@@ -89,6 +102,18 @@ private:
   Page _currentPage;
   bool _testMode;
   TestScreen _currentTestScreen;
+
+  // Power save and UI timeout
+  bool _displayAwake;
+  unsigned long _lastUiActivityTime;
+  unsigned long _uiTimeoutMs;
+
+  // Charging transition & animation
+  bool _chargingAnimationActive;
+  unsigned long _chargingAnimationStart;
+  Page _savedPageBeforeAnimation;
+  TestScreen _savedTestScreenBeforeAnimation;
+  bool _lastChargingState;
 
   int _screenW;
   int _screenH;
@@ -128,3 +153,4 @@ private:
 };
 
 extern DisplayManager displayManager;
+

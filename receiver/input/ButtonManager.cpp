@@ -52,6 +52,19 @@ void ButtonManager::update() {
         LOW
       ) {
 
+        // Edge Case: If charging animation is running, DO NOTHING
+        if (displayManager.isChargingAnimationActive()) {
+          return;
+        }
+
+        // Inactivity Wake Action: First press only wakes display and keeps current page
+        if (!displayManager.isAwake()) {
+          displayManager.wakeDisplay();
+          return;
+        }
+
+        // UI is awake: restart 15s timeout and navigate pages
+        displayManager.resetTimeout();
         displayManager.switchPage();
       }
     }
