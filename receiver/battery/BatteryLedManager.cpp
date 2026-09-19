@@ -6,10 +6,16 @@ BatteryLedManager batteryLedManager;
 BatteryLedManager::BatteryLedManager()
   : _ina219(INA219_I2C_ADDRESS),
     _voltage(0.0f),
+    _shunt_mV(0.0f),
+    _load_voltage(0.0f),
     _current_mA(0.0f),
+    _power_mW(0.0f),
     _batteryPercent(0.0f),
     _charging(false),
     _lastSensorRead(0) {
+  for (int i = 0; i < 5; i++) {
+    _ledStates[i] = false;
+  }
 }
 
 // =====================================================
@@ -64,8 +70,20 @@ float BatteryLedManager::getVoltage() const {
   return _voltage;
 }
 
+float BatteryLedManager::getShuntVoltage_mV() const {
+  return _shunt_mV;
+}
+
+float BatteryLedManager::getLoadVoltage_V() const {
+  return _load_voltage;
+}
+
 float BatteryLedManager::getCurrent_mA() const {
   return _current_mA;
+}
+
+float BatteryLedManager::getPower_mW() const {
+  return _power_mW;
 }
 
 float BatteryLedManager::getBatteryPercent() const {
@@ -74,6 +92,27 @@ float BatteryLedManager::getBatteryPercent() const {
 
 bool BatteryLedManager::isCharging() const {
   return _charging;
+}
+
+const char* BatteryLedManager::getChargingStateStr() const {
+  if (_current_mA < CURRENT_CHARGING_THRESHOLD_MA) {
+    return "CHARGING";
+  } else if (_current_mA > CURRENT_DISCHARGING_THRESHOLD_MA) {
+    return "DISCHARGING";
+  } else {
+    return "NOT CHARGING";
+  }
+}
+
+bool BatteryLedManager::isSensorConnected() const {
+  return _ina219.isConnected();
+}
+
+bool BatteryLedManager::getLedPinState(uint8_t index) const {
+  if (index < 5) {
+    return _ledStates[index];
+  }
+  return false;
 }
 
 // =====================================================
@@ -122,7 +161,10 @@ bool BatteryLedManager::isChargingCurrent(float current_mA) {
 // =====================================================
 void BatteryLedManager::updateSensors() {
   _voltage = _ina219.getBusVoltage_V();
+  _shunt_mV = _ina219.getShuntVoltage_mV();
+  _load_voltage = _ina219.getLoadVoltage_V();
   _current_mA = _ina219.getCurrent_mA();
+  _power_mW = _ina219.getPower_mW();
 
   _charging = isChargingCurrent(_current_mA);
   _batteryPercent = calculatePercentage(_voltage);
@@ -239,18 +281,18 @@ void BatteryLedManager::updateLeds() {
     }
   }
 
-  // Drive LED output pins
-  driveLed(BATTERY_LED_1_PIN, led1Mode, normalBlinkOn, fastBlinkOn);
-  driveLed(BATTERY_LED_2_PIN, led2Mode, normalBlinkOn, fastBlinkOn);
-  driveLed(BATTERY_LED_3_PIN, led3Mode, normalBlinkOn, fastBlinkOn);
-  driveLed(BATTERY_LED_4_PIN, led4Mode, normalBlinkOn, fastBlinkOn);
-  driveLed(BATTERY_LED_5_PIN, led5Mode, normalBlinkOn, fastBlinkOn);
+  // Drive LED output pins and record their live active states
+  _ledStates[0] = driveLed(BATTERY_LED_1_PIN, led1Mode, normalBlinkOn, fastBlinkOn);
+  _ledStates[1] = driveLed(BATTERY_LED_2_PIN, led2Mode, normalBlinkOn, fastBlinkOn);
+  _ledStates[2] = driveLed(BATTERY_LED_3_PIN, led3Mode, normalBlinkOn, fastBlinkOn);
+  _ledStates[3] = driveLed(BATTERY_LED_4_PIN, led4Mode, normalBlinkOn, fastBlinkOn);
+  _ledStates[4] = driveLed(BATTERY_LED_5_PIN, led5Mode, normalBlinkOn, fastBlinkOn);
 }
 
 // =====================================================
 //                 PIN DRIVER
 // =====================================================
-void BatteryLedManager::driveLed(uint8_t pin, BatteryLedMode mode, bool normalBlinkOn, bool fastBlinkOn) {
+bool BatteryLedManager::driveLed(uint8_t pin, BatteryLedMode mode, bool normalBlinkOn, bool fastBlinkOn) {
   bool pinState = false;
 
   switch (mode) {
@@ -273,4 +315,5 @@ void BatteryLedManager::driveLed(uint8_t pin, BatteryLedMode mode, bool normalBl
   }
 
   digitalWrite(pin, pinState ? HIGH : LOW);
+  return pinState;
 }

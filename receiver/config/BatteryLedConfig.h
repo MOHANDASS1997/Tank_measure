@@ -6,6 +6,11 @@
 //             BATTERY & INA219 CONFIGURATION
 // =====================================================
 
+// Test mode alias (configured via TEST_MODE in BoardConfig.h)
+#ifndef INA219_TEST_MODE
+#define INA219_TEST_MODE                 TEST_MODE
+#endif
+
 // INA219 I2C Hardware Settings
 #define INA219_I2C_ADDRESS               0x40
 #define INA219_I2C_SDA                   21

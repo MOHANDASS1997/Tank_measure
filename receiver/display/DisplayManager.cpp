@@ -1,4 +1,5 @@
 #include "DisplayManager.h"
+#include "../battery/BatteryLedManager.h"
 
 // Instantiate global DisplayManager
 DisplayManager displayManager;
@@ -6,6 +7,8 @@ DisplayManager displayManager;
 DisplayManager::DisplayManager()
   : _display(U8G2_R0, U8X8_PIN_NONE),
     _currentPage(PAGE_TANK),
+    _testMode(false),
+    _currentTestScreen(TEST_SCREEN_INA219),
     _screenW(128),
     _screenH(64),
     _minDim(64),
@@ -1483,6 +1486,12 @@ void DisplayManager::showWiFiConnected(
 
 void DisplayManager::switchPage() {
 
+  // If in test mode, cycle to next test screen
+  if (_testMode) {
+    switchTestScreen();
+    return;
+  }
+
   // If no battery data is available, do not switch page
   if (!_displayData.hasBattery) {
     return;
@@ -1503,6 +1512,39 @@ void DisplayManager::switchPage() {
   }
 
   drawCurrentScreen();
+}
+
+// =====================================================
+//                 TEST MODE CONTROLLER
+// =====================================================
+
+void DisplayManager::setTestMode(bool active) {
+  _testMode = active;
+}
+
+bool DisplayManager::isTestMode() const {
+  return _testMode;
+}
+
+void DisplayManager::switchTestScreen() {
+  if (TEST_SCREEN_COUNT > 0) {
+    _currentTestScreen = (TestScreen)((_currentTestScreen + 1) % TEST_SCREEN_COUNT);
+    Serial.print("Test screen navigated to: ");
+    Serial.println((int)_currentTestScreen);
+  }
+}
+
+TestScreen DisplayManager::getCurrentTestScreen() const {
+  return _currentTestScreen;
+}
+
+void DisplayManager::updateTestScreen(const BatteryLedManager& batteryLed) {
+  switch (_currentTestScreen) {
+    case TEST_SCREEN_INA219:
+    default:
+      drawIna219TestScreen(batteryLed);
+      break;
+  }
 }
 
 void DisplayManager::update() {
@@ -1526,4 +1568,110 @@ void DisplayManager::update() {
     _lastFooterUpdate = millis();
     drawCurrentScreen();
   }
+}
+
+// =====================================================
+//             INA219 REALTIME TEST SCREEN
+// =====================================================
+
+void DisplayManager::drawIna219TestScreen(const BatteryLedManager& batteryLed) {
+  drawIna219TestScreen(
+    batteryLed.getVoltage(),
+    batteryLed.getShuntVoltage_mV(),
+    batteryLed.getLoadVoltage_V(),
+    batteryLed.getCurrent_mA(),
+    batteryLed.getPower_mW(),
+    batteryLed.getBatteryPercent(),
+    batteryLed.getChargingStateStr(),
+    batteryLed.isSensorConnected(),
+    batteryLed.getLedPinState(0),
+    batteryLed.getLedPinState(1),
+    batteryLed.getLedPinState(2),
+    batteryLed.getLedPinState(3),
+    batteryLed.getLedPinState(4)
+  );
+}
+
+void DisplayManager::drawIna219TestScreen(
+  float busV,
+  float shuntMv,
+  float loadV,
+  float currentMa,
+  float powerMw,
+  float batPct,
+  const char* stateStr,
+  bool isConnected,
+  bool led1,
+  bool led2,
+  bool led3,
+  bool led4,
+  bool led5
+) {
+  _display.clearBuffer();
+
+  // Header bar (inverted box with title & sensor status)
+  _display.drawBox(0, 0, _screenW, 11);
+  _display.setDrawColor(0);
+  _display.setFont(u8g2_font_6x10_tr);
+
+  char titleBuf[24];
+  if (TEST_SCREEN_COUNT > 1) {
+    snprintf(titleBuf, sizeof(titleBuf), "INA219 [%d/%d]", (int)_currentTestScreen + 1, (int)TEST_SCREEN_COUNT);
+  } else {
+    snprintf(titleBuf, sizeof(titleBuf), "INA219 TEST");
+  }
+  _display.drawStr(3, 9, titleBuf);
+
+  if (isConnected) {
+    _display.drawStr(_screenW - 16, 9, "OK");
+  } else {
+    _display.drawStr(_screenW - 22, 9, "ERR");
+  }
+
+  // Body: Real-time sensor metrics
+  _display.setDrawColor(1);
+  _display.setFont(u8g2_font_5x8_tr);
+
+  // Line 1: VBUS and BATT %
+  char line1[32];
+  snprintf(line1, sizeof(line1), "VBUS: %.3fV  BAT: %.0f%%", busV, batPct);
+  _display.drawStr(2, 20, line1);
+
+  // Line 2: CURRENT and POWER
+  char line2[32];
+  snprintf(line2, sizeof(line2), "CUR: %.1fmA PWR: %.0fmW", currentMa, powerMw);
+  _display.drawStr(2, 29, line2);
+
+  // Line 3: VSHUNT and VLOAD
+  char line3[32];
+  snprintf(line3, sizeof(line3), "VSH: %.1fmV  VLD: %.2fV", shuntMv, loadV);
+  _display.drawStr(2, 38, line3);
+
+  // Line 4: OPERATING STATE
+  char line4[32];
+  snprintf(line4, sizeof(line4), "STATE: %s", stateStr);
+  _display.drawStr(2, 47, line4);
+
+  // Divider line
+  _display.drawHLine(0, 50, _screenW);
+
+  // Footer: 5-LED Live Visual Indicator
+  _display.drawStr(2, 60, "LEDS:");
+
+  bool leds[5] = { led1, led2, led3, led4, led5 };
+  for (int i = 0; i < 5; i++) {
+    int cx = 38 + i * 18;
+    int cy = 57;
+    if (leds[i]) {
+      _display.drawDisc(cx, cy, 3);
+    } else {
+      _display.drawCircle(cx, cy, 3);
+    }
+    char numStr[2];
+    numStr[0] = '1' + i;
+    numStr[1] = '\0';
+    _display.drawStr(cx + 5, 60, numStr);
+  }
+
+  _display.sendBuffer();
 }

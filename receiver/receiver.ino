@@ -71,8 +71,20 @@ void setup() {
   // Initialize battery LED indicator & INA219 monitor
   batteryLedManager.begin();
 
-  // Initialize button input
+  // Initialize button input (for normal & test mode navigation)
   buttonManager.begin();
+
+#if TEST_MODE
+  displayManager.setTestMode(true);
+  Serial.println();
+  Serial.println("================================");
+  Serial.println("TEST MODE: ACTIVE");
+  Serial.println("Displaying diagnostic test screens only.");
+  Serial.println("Press button on GPIO 27 to cycle test screens.");
+  Serial.println("All normal screens disabled.");
+  Serial.println("================================");
+  return;
+#endif
 
   // =====================================================
   // STEP 1: WI-FI STATUS CHECK & SETUP SCREEN
@@ -129,6 +141,16 @@ void loop() {
 
   // Update battery LED indicator & INA219 monitoring
   batteryLedManager.update();
+
+#if TEST_MODE
+  // Handle button input for test screen navigation
+  buttonManager.update();
+
+  // Render current active test screen with live data
+  displayManager.updateTestScreen(batteryLedManager);
+  delay(30);
+  return;
+#endif
 
   // Handle button input & page navigation
   buttonManager.update();

@@ -23,3 +23,11 @@
 #define MOCK_INITIAL_DELAY_MS                                                  \
   10000 // Initial delay before 1st mock trigger (10 seconds)
 #define MOCK_DATA_INTERVAL_MS 60000 // Periodic interval (1 minute)
+
+// =====================================================
+//                     TEST MODE
+// =====================================================
+// Set to true to activate Test Mode with diagnostic screens.
+// In Test Mode, only test screens are displayed and can be navigated
+// using the page navigation button. Set to false for normal operation.
+#define TEST_MODE false

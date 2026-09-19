@@ -71,6 +71,16 @@ public:
     return rawShunt * 0.1f;
   }
 
+  // Returns Load Voltage in Volts (V) = Bus Voltage + (Shunt Voltage / 1000)
+  float getLoadVoltage_V() {
+    return getBusVoltage_V() + (getShuntVoltage_mV() * 0.001f);
+  }
+
+  // Returns Power in milliwatts (mW)
+  float getPower_mW() {
+    return fabsf(getBusVoltage_V() * getCurrent_mA());
+  }
+
 private:
   uint8_t _address;
   bool _initialized;

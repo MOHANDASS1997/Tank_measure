@@ -8,6 +8,9 @@
 #include "../models/DisplayData.h"
 #include "../time/TimeManager.h"
 
+// Forward declaration
+class BatteryLedManager;
+
 // =====================================================
 //                    PAGE STATE
 // =====================================================
@@ -15,6 +18,21 @@
 enum Page {
   PAGE_TANK,
   PAGE_BATTERY
+};
+
+// =====================================================
+//                 TEST SCREEN ENUM
+// =====================================================
+// To add a new test screen in the future:
+// 1. Add an enum value before TEST_SCREEN_COUNT
+// 2. Add a draw<Name>TestScreen() method
+// 3. Add a case in updateTestScreen()
+enum TestScreen {
+  TEST_SCREEN_INA219 = 0,
+  // Future test screens:
+  // TEST_SCREEN_LORA,
+  // TEST_SCREEN_WIFI,
+  TEST_SCREEN_COUNT
 };
 
 // =====================================================
@@ -31,6 +49,13 @@ public:
   void showNotConnected();
   void switchPage();
 
+  // Test Mode management
+  void setTestMode(bool active);
+  bool isTestMode() const;
+  void switchTestScreen();
+  TestScreen getCurrentTestScreen() const;
+  void updateTestScreen(const BatteryLedManager& batteryLed);
+
   void drawCurrentScreen();
   void drawNotConnectedScreen();
   void drawTankScreen(float tankValue);
@@ -40,11 +65,30 @@ public:
   void showWiFiNudge(const String& ssid, const String& ip, const char* statusMsg = "Open IP in browser");
   void showWiFiConnected(const String& ssid, const String& ip);
 
+  void drawIna219TestScreen(const BatteryLedManager& batteryLed);
+  void drawIna219TestScreen(
+    float busV,
+    float shuntMv,
+    float loadV,
+    float currentMa,
+    float powerMw,
+    float batPct,
+    const char* stateStr,
+    bool isConnected,
+    bool led1,
+    bool led2,
+    bool led3,
+    bool led4,
+    bool led5
+  );
+
 private:
   U8G2_SH1106_128X64_NONAME_F_HW_I2C _display;
 
   DisplayData _displayData;
   Page _currentPage;
+  bool _testMode;
+  TestScreen _currentTestScreen;
 
   int _screenW;
   int _screenH;
