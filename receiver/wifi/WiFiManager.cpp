@@ -1,184 +1,97 @@
 #include "WiFiManager.h"
+#include "WebPortalHtml.h"
+#include "../config/ConfigJsonHelper.h"
+#include "../time/TimeManager.h"
 
-// Instantiate global WiFiManager
 WiFiManager wifiManager;
 
 WiFiManager::WiFiManager()
-  : _connected(false),
-    _isAP(false),
-    _ip("0.0.0.0"),
-    _ssid(""),
-    _newSSID(""),
-    _newPassword(""),
-    _pendingConnect(false),
-    _server(80) {
+  : _consumers(CONSUMER_NONE),
+    _state(WIFI_STATE_OFF),
+    _staConnectStartTime(0),
+    _configModeStartTime(0),
+    _timestampSyncStartTime(0),
+    _server(80),
+    _mdnsStarted(false) {
 }
 
-void WiFiManager::loadCredentials(String& ssid, String& password) {
+void WiFiManager::begin() {
+  Serial.println("[WiFi] Initializing Wi-Fi Manager. Wi-Fi set to OFF by default.");
+  WiFi.persistent(false);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  _state = WIFI_STATE_OFF;
+  _consumers = CONSUMER_NONE;
+}
 
-  _preferences.begin("dasshome_wifi", true);
-  ssid = _preferences.getString("ssid", "");
-  password = _preferences.getString("pass", "");
-  _preferences.end();
-
-  // If not in NVS, fallback to WiFiConfig.h defaults if provided
-  if (ssid.length() == 0 && strlen(WIFI_SSID) > 0) {
-    ssid = String(WIFI_SSID);
-    password = String(WIFI_PASSWORD);
+void WiFiManager::applyPowerState() {
+  if (_consumers == CONSUMER_NONE) {
+    if (_state != WIFI_STATE_OFF) {
+      Serial.println("[WiFi] No consumers remaining. Powering Wi-Fi OFF.");
+      stopWebServer();
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+      _state = WIFI_STATE_OFF;
+    }
+  } else {
+    // At least one consumer needs Wi-Fi
+    if (_state == WIFI_STATE_OFF) {
+      startSTAConnection();
+    }
   }
 }
 
-void WiFiManager::saveCredentials(const String& ssid, const String& password) {
-
-  _preferences.begin("dasshome_wifi", false);
-  _preferences.putString("ssid", ssid);
-  _preferences.putString("pass", password);
-  _preferences.end();
-
-  Serial.println("Wi-Fi credentials saved to NVS storage.");
-}
-
-bool WiFiManager::tryConnectSTA(
-  const char* ssid,
-  const char* password,
-  unsigned long timeoutMs
-) {
-
-  if (ssid == nullptr || strlen(ssid) == 0) {
-    return false;
+void WiFiManager::startSTAConnection() {
+  const auto& wf = wifiConfig.get();
+  if (strlen(wf.ssid) == 0) {
+    Serial.println("[WiFi] No STA SSID configured.");
+    if (isConfigModeActive()) {
+      startAP();
+    } else {
+      Serial.println("[WiFi] Cannot connect STA without SSID. Releasing timestamp request.");
+      _consumers &= ~CONSUMER_TIMESTAMP;
+      applyPowerState();
+    }
+    return;
   }
 
+  Serial.print("[WiFi] Connecting to SSID: ");
+  Serial.println(wf.ssid);
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-
-  Serial.print("Connecting to Wi-Fi SSID: ");
-  Serial.print(ssid);
-
-  unsigned long startTime = millis();
-
-  while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeoutMs) {
-    delay(250);
-    Serial.print(".");
-  }
-
-  Serial.println();
-
-  if (WiFi.status() == WL_CONNECTED) {
-    _connected = true;
-    _isAP = false;
-    _ip = WiFi.localIP().toString();
-    _ssid = String(ssid);
-    return true;
-  }
-
-  return false;
+  WiFi.begin(wf.ssid, wf.password);
+  _state = WIFI_STATE_STA_CONNECTING;
+  _staConnectStartTime = millis();
 }
 
 void WiFiManager::startAP() {
-
+  Serial.println("[WiFi] Starting Fallback Access Point: " WIFI_AP_SSID);
   WiFi.mode(WIFI_AP_STA);
-
   if (strlen(WIFI_AP_PASSWORD) > 0) {
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
   } else {
     WiFi.softAP(WIFI_AP_SSID);
   }
+  _state = WIFI_STATE_AP_ACTIVE;
 
-  _connected = false;
-  _isAP = true;
-  _ip = WiFi.softAPIP().toString();
-  _ssid = String(WIFI_AP_SSID);
-}
-
-void WiFiManager::handleCaptivePortal() {
-
-  _server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + String("/"), true);
-  _server.send(302, "text/plain", "");
-}
-
-void WiFiManager::handleRoot() {
-
-  int numNetworks = WiFi.scanNetworks();
-
-  String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width,initial-scale=1.0'>";
-  html += "<title>DASS HOME Wi-Fi Setup</title>";
-  html += "<style>";
-  html += "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
-  html += "background:#0f172a;color:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:16px;box-sizing:border-box;}";
-  html += ".card{background:#1e293b;border-radius:16px;box-shadow:0 10px 25px rgba(0,0,0,0.5);width:100%;max-width:380px;padding:28px;border:1px solid #334155;}";
-  html += "h1{font-size:22px;margin:0 0 8px;color:#38bdf8;text-align:center;font-weight:700;}";
-  html += "p{font-size:14px;color:#94a3b8;margin:0 0 24px;text-align:center;line-height:1.4;}";
-  html += "label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:#cbd5e1;}";
-  html += "select,input{width:100%;padding:12px;margin-bottom:18px;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#f8fafc;font-size:15px;box-sizing:border-box;outline:none;}";
-  html += "select:focus,input:focus{border-color:#38bdf8;}";
-  html += "button{width:100%;padding:13px;background:#0284c7;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:background 0.2s;}";
-  html += "button:hover{background:#0369a1;}";
-  html += ".badge{font-size:11px;background:#334155;color:#94a3b8;padding:4px 8px;border-radius:12px;float:right;}";
-  html += "</style>";
-  html += "<script>";
-  html += "function selectSSID(val){if(val){document.getElementById('customSSID').value=val;}}";
-  html += "</script></head><body>";
-  html += "<div class='card'>";
-  html += "<h1>DASS HOME Wi-Fi</h1>";
-  html += "<p>Configure Wi-Fi connection for your receiver.</p>";
-  html += "<form method='POST' action='/save'>";
-
-  if (numNetworks > 0) {
-    html += "<label>Detected Networks</label>";
-    html += "<select onchange='selectSSID(this.value)'>";
-    html += "<option value=''>-- Select your Wi-Fi --</option>";
-    for (int i = 0; i < numNetworks; i++) {
-      html += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + " (" + String(WiFi.RSSI(i)) + " dBm)</option>";
-    }
-    html += "</select>";
-  }
-
-  html += "<label>Network Name (SSID)</label>";
-  html += "<input type='text' id='customSSID' name='ssid' placeholder='Enter Wi-Fi SSID' required>";
-  html += "<label>Wi-Fi Password</label>";
-  html += "<input type='password' name='password' placeholder='Enter Password'>";
-  html += "<button type='submit'>Save & Connect</button>";
-  html += "</form></div></body></html>";
-
-  _server.send(200, "text/html", html);
-}
-
-void WiFiManager::handleSave() {
-
-  if (_server.hasArg("ssid")) {
-    _newSSID = _server.arg("ssid");
-    _newPassword = _server.arg("password");
-    _pendingConnect = true;
-
-    String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
-    html += "<meta name='viewport' content='width=device-width,initial-scale=1.0'>";
-    html += "<title>Connecting...</title>";
-    html += "<style>body{font-family:sans-serif;background:#0f172a;color:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;text-align:center;}";
-    html += ".card{background:#1e293b;padding:32px;border-radius:16px;max-width:340px;border:1px solid #334155;}";
-    html += "h1{color:#38bdf8;font-size:20px;}p{color:#94a3b8;line-height:1.5;}</style></head>";
-    html += "<body><div class='card'>";
-    html += "<h1>Connecting to Wi-Fi</h1>";
-    html += "<p>Attempting connection to <b>" + _newSSID + "</b>.<br><br>Please check the OLED display on your DASS HOME receiver.</p>";
-    html += "</div></body></html>";
-
-    _server.send(200, "text/html", html);
-  } else {
-    _server.send(400, "text/plain", "Missing SSID parameter");
-  }
+  // Start captive DNS
+  _dnsServer.start(53, "*", WiFi.softAPIP());
+  setupWebServer();
 }
 
 void WiFiManager::setupWebServer() {
+  // Endpoints
+  _server.on("/", HTTP_GET, [this]() { handleRoot(); });
+  _server.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
+  _server.on("/api/config", HTTP_POST, [this]() { handlePostConfig(); });
+  _server.on("/api/reset", HTTP_POST, [this]() { handleResetConfig(); });
+  _server.on("/api/exit", HTTP_POST, [this]() { handleExitConfig(); });
 
-  _server.on("/", HTTP_GET, [this]() {
-    handleRoot();
-  });
+  // Browser icon handlers (prevent 302 redirect loops in AP mode)
+  _server.on("/favicon.ico", HTTP_GET, [this]() { _server.send(204); });
+  _server.on("/apple-touch-icon.png", HTTP_GET, [this]() { _server.send(204); });
+  _server.on("/apple-touch-icon-precomposed.png", HTTP_GET, [this]() { _server.send(204); });
 
-  _server.on("/save", HTTP_POST, [this]() {
-    handleSave();
-  });
-
-  // Captive portal redirect routes
+  // Captive portal redirects
   _server.on("/generate_204", [this]() { handleCaptivePortal(); });
   _server.on("/hotspot-detect.html", [this]() { handleCaptivePortal(); });
   _server.on("/canonical.html", [this]() { handleCaptivePortal(); });
@@ -186,123 +99,236 @@ void WiFiManager::setupWebServer() {
   _server.on("/ncsi.txt", [this]() { handleCaptivePortal(); });
 
   _server.onNotFound([this]() {
-    handleCaptivePortal();
+    if (_state == WIFI_STATE_AP_ACTIVE) {
+      handleCaptivePortal();
+    } else {
+      _server.send(404, "text/plain", "Not Found");
+    }
   });
 
   _server.begin();
-  Serial.println("Wi-Fi Setup Web Server started on port 80.");
+  Serial.println("[WebUI] Web server started on port 80.");
+
+  if (!_mdnsStarted) {
+    if (MDNS.begin(MDNS_HOSTNAME)) {
+      MDNS.addService("http", "tcp", 80);
+      _mdnsStarted = true;
+      Serial.println("[mDNS] Registered http://dasshome.local");
+    } else {
+      Serial.println("[mDNS] mDNS responder initialization failed.");
+    }
+  }
 }
 
-void WiFiManager::begin() {
-
-  Serial.println();
-  Serial.println("================================");
-  Serial.println("Wi-Fi Status & Connection Check");
-  Serial.println("================================");
-
-  String storedSSID = "";
-  String storedPassword = "";
-  loadCredentials(storedSSID, storedPassword);
-
-  bool connected = false;
-
-  if (storedSSID.length() > 0) {
-    Serial.print("Attempting connection to saved network: ");
-    Serial.println(storedSSID);
-    connected = tryConnectSTA(storedSSID.c_str(), storedPassword.c_str(), WIFI_CONNECT_TIMEOUT_MS);
+void WiFiManager::stopWebServer() {
+  _server.stop();
+  if (_state == WIFI_STATE_AP_ACTIVE) {
+    _dnsServer.stop();
+    WiFi.softAPdisconnect(true);
   }
+  if (_mdnsStarted) {
+    MDNS.end();
+    _mdnsStarted = false;
+  }
+  Serial.println("[WebUI] Web server stopped.");
+}
 
-  if (connected) {
-    Serial.println("Wi-Fi connected successfully!");
-    Serial.print("SSID: ");
-    Serial.println(_ssid);
-    Serial.print("IP Address: ");
-    Serial.println(_ip);
+void WiFiManager::requestTimestampSync() {
+  Serial.println("[WiFi] Requesting Wi-Fi for timestamp synchronization...");
+  _consumers |= CONSUMER_TIMESTAMP;
+  _timestampSyncStartTime = millis();
+
+  // If already connected, trigger SNTP immediately
+  if (_state == WIFI_STATE_STA_CONNECTED) {
+    timeManager.begin(timeConfig.get().gmtOffsetSec, timeConfig.get().daylightOffsetSec);
+  } else if (_state == WIFI_STATE_OFF) {
+    startSTAConnection();
+  }
+}
+
+void WiFiManager::enterConfigMode() {
+  if (isConfigModeActive()) return;
+
+  Serial.println("[WiFi] Entering Configuration Mode.");
+  _consumers |= CONSUMER_CONFIG_MODE;
+  _configModeStartTime = millis();
+
+  if (_state == WIFI_STATE_STA_CONNECTED) {
+    setupWebServer();
+  } else if (_state == WIFI_STATE_OFF) {
+    startSTAConnection();
+  }
+}
+
+void WiFiManager::exitConfigMode() {
+  if (!isConfigModeActive()) return;
+
+  Serial.println("[WiFi] Exiting Configuration Mode.");
+  stopWebServer();
+  _consumers &= ~CONSUMER_CONFIG_MODE;
+  applyPowerState();
+}
+
+void WiFiManager::toggleConfigMode() {
+  if (isConfigModeActive()) {
+    exitConfigMode();
   } else {
-    Serial.println("Wi-Fi not connected. Starting Access Point for setup.");
-    startAP();
-    Serial.print("AP SSID: ");
-    Serial.println(_ssid);
-    Serial.print("AP IP Address: ");
-    Serial.println(_ip);
+    enterConfigMode();
   }
-
-  Serial.println("================================");
 }
 
-void WiFiManager::runStartupFlow(
-  DisplayManager& display,
-  ButtonManager& button
-) {
+void WiFiManager::update() {
+  unsigned long now = millis();
 
-  if (_connected) {
-    // Wi-Fi already connected: directly proceed to subsequent screens
-    return;
-  }
-
-  // If not connected, start WebServer and DNS Server for setup
-  _dnsServer.start(53, "*", WiFi.softAPIP());
-  setupWebServer();
-
-  // Show nudge screen prompting user to connect to WiFi and showing IP
-  display.showWiFiNudge(_ssid, _ip, "Open IP in browser");
-
-  Serial.println("Wi-Fi setup screen active. Waiting for setup to complete...");
-
-  // BLOCKING LOOP: Do not dismiss the screen until Wi-Fi setup is complete
-  while (!_connected) {
-
-    _dnsServer.processNextRequest();
-    _server.handleClient();
-
-    if (_pendingConnect) {
-      display.showWiFiNudge(_ssid, _ip, "Connecting to WiFi...");
-      Serial.print("Connecting to new Wi-Fi: ");
-      Serial.println(_newSSID);
-
-      bool ok = tryConnectSTA(_newSSID.c_str(), _newPassword.c_str(), WIFI_CONNECT_TIMEOUT_MS);
-
-      if (ok) {
-        Serial.println("Wi-Fi connected successfully!");
-        Serial.print("Assigned IP: ");
-        Serial.println(_ip);
-
-        saveCredentials(_newSSID, _newPassword);
-
-        // Stop setup services
-        _server.stop();
-        _dnsServer.stop();
-        WiFi.softAPdisconnect(true);
-
-        break; // Setup complete! Proceed directly to subsequent screens
-      } else {
-        Serial.println("Connection failed. Returning to AP setup mode.");
-        startAP();
-        _dnsServer.start(53, "*", WiFi.softAPIP());
-        _server.begin();
-        display.showWiFiNudge(_ssid, _ip, "Connect failed, retry");
-        _pendingConnect = false;
-      }
+  // 1. Check Configuration Mode Auto-Exit Timeout
+  if (isConfigModeActive()) {
+    unsigned long timeout = systemConfig.get().configTimeoutMs;
+    if (now - _configModeStartTime >= timeout) {
+      Serial.println("[WiFi] Configuration Mode 5-minute timeout reached. Automatically closing.");
+      exitConfigMode();
+      return;
     }
 
-    delay(10);
+    // Handle web server clients and DNS requests
+    _server.handleClient();
+    if (_state == WIFI_STATE_AP_ACTIVE) {
+      _dnsServer.processNextRequest();
+    }
   }
 
-  Serial.println("Wi-Fi setup completed. Proceeding to LoRa setup.");
-}
+  // 2. Wi-Fi STA Connection Progress & Bounded Timeout
+  if (_state == WIFI_STATE_STA_CONNECTING) {
+    if (WiFi.status() == WL_CONNECTED) {
+      _state = WIFI_STATE_STA_CONNECTED;
+      Serial.println("[WiFi] Connected to STA successfully!");
+      Serial.print("[WiFi] IP Address: ");
+      Serial.println(WiFi.localIP());
 
-bool WiFiManager::isConnected() const {
-  return _connected;
-}
+      // If configuration mode is active, ensure WebServer is running
+      if (isConfigModeActive()) {
+        setupWebServer();
+      }
 
-bool WiFiManager::isAPActive() const {
-  return _isAP;
+      // If timestamp sync requested, trigger SNTP sync
+      if (isTimestampSyncActive()) {
+        timeManager.begin(timeConfig.get().gmtOffsetSec, timeConfig.get().daylightOffsetSec);
+      }
+    } else {
+      // Check bounded timeout
+      unsigned long timeoutMs = wifiConfig.get().connectTimeoutMs;
+      if (now - _staConnectStartTime >= timeoutMs) {
+        Serial.println("[WiFi] STA connection timed out.");
+
+        if (isConfigModeActive()) {
+          Serial.println("[WiFi] Falling back to Access Point for Web UI.");
+          startAP();
+        } else {
+          // Timestamp consumer timed out: fallback to relative time without blocking LoRa
+          Serial.println("[WiFi] Proceeding with fallback timestamp. Releasing Wi-Fi requirement.");
+          _consumers &= ~CONSUMER_TIMESTAMP;
+          applyPowerState();
+        }
+      }
+    }
+  }
+
+  // 3. Timestamp Sync Completion Check
+  if (isTimestampSyncActive() && _state == WIFI_STATE_STA_CONNECTED) {
+    // If SNTP is synced, or after bounded wait, release consumer
+    if (timeManager.isSynced() || (now - _timestampSyncStartTime >= 4000)) {
+      Serial.println("[WiFi] Timestamp operation complete. Releasing timestamp Wi-Fi consumer.");
+      _consumers &= ~CONSUMER_TIMESTAMP;
+      applyPowerState();
+    }
+  }
 }
 
 String WiFiManager::getIP() const {
-  return _ip;
+  if (_state == WIFI_STATE_STA_CONNECTED) {
+    return WiFi.localIP().toString();
+  } else if (_state == WIFI_STATE_AP_ACTIVE) {
+    return WiFi.softAPIP().toString();
+  }
+  return "0.0.0.0";
 }
 
 String WiFiManager::getSSID() const {
-  return _ssid;
+  if (_state == WIFI_STATE_STA_CONNECTED) {
+    return String(wifiConfig.get().ssid);
+  } else if (_state == WIFI_STATE_AP_ACTIVE) {
+    return String(WIFI_AP_SSID);
+  }
+  return "";
+}
+
+unsigned long WiFiManager::getConfigModeRemainingSeconds() const {
+  if (!isConfigModeActive()) return 0;
+  unsigned long elapsed = millis() - _configModeStartTime;
+  unsigned long total = systemConfig.get().configTimeoutMs;
+  if (elapsed >= total) return 0;
+  return (total - elapsed) / 1000;
+}
+
+// =====================================================
+//                 HTTP HANDLERS
+// =====================================================
+
+void WiFiManager::handleRoot() {
+  _configModeStartTime = millis(); // Reset inactivity timer on UI interactions
+  _server.send_P(200, "text/html", WEB_PORTAL_HTML);
+}
+
+void WiFiManager::handleGetConfig() {
+  _configModeStartTime = millis();
+  String json = ConfigJsonHelper::serializeAll();
+  _server.send(200, "application/json", json);
+}
+
+void WiFiManager::handlePostConfig() {
+  _configModeStartTime = millis();
+  if (!_server.hasArg("plain")) {
+    _server.send(400, "application/json", "{\"success\":false,\"error\":\"Empty request body\"}");
+    return;
+  }
+
+  String json = _server.arg("plain");
+  String err;
+  bool ok = ConfigJsonHelper::deserializeAndSave(json, err);
+
+  if (ok) {
+    _server.send(200, "application/json", "{\"success\":true,\"message\":\"Configuration saved successfully!\"}");
+  } else {
+    String resp = "{\"success\":false,\"error\":\"" + err + "\"}";
+    _server.send(400, "application/json", resp);
+  }
+}
+
+void WiFiManager::handleResetConfig() {
+  _configModeStartTime = millis();
+  String section = "all";
+  if (_server.hasArg("section")) {
+    section = _server.arg("section");
+  }
+
+  String err;
+  bool ok = ConfigJsonHelper::resetSection(section, err);
+
+  if (ok) {
+    _server.send(200, "application/json", "{\"success\":true,\"message\":\"Reset to defaults successfully!\"}");
+  } else {
+    String resp = "{\"success\":false,\"error\":\"" + err + "\"}";
+    _server.send(400, "application/json", resp);
+  }
+}
+
+void WiFiManager::handleExitConfig() {
+  _server.send(200, "application/json", "{\"success\":true,\"message\":\"Exiting configuration mode.\"}");
+  // Allow HTTP response to flush before closing
+  delay(100);
+  exitConfigMode();
+}
+
+void WiFiManager::handleCaptivePortal() {
+  _server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + String("/"), true);
+  _server.send(302, "text/plain", "");
 }

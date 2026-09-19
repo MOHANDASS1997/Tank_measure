@@ -10,7 +10,7 @@ TimeManager::TimeManager()
 void TimeManager::begin(long gmtOffset, int daylightOffset) {
 
   Serial.println("Configuring SNTP time sync via Wi-Fi...");
-  configTime(gmtOffset, daylightOffset, NTP_SERVER_1, NTP_SERVER_2);
+  configTime(gmtOffset, daylightOffset, timeConfig.get().ntpServer1, timeConfig.get().ntpServer2);
   _configured = true;
 }
 

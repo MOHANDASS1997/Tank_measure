@@ -1,12 +1,15 @@
 #include <Arduino.h>
 
 #include "config/BoardConfig.h"
+#include "config/SystemConfig.h"
 #include "config/LoRaConfig.h"
 #include "config/PacketConfig.h"
 #include "config/TankConfig.h"
+#include "config/TransmitterConfig.h"
 #include "config/WiFiConfig.h"
 #include "config/TimeConfig.h"
 #include "config/BatteryLedConfig.h"
+#include "config/ConfigJsonHelper.h"
 
 #include "models/Telemetry.h"
 #include "models/DisplayData.h"
@@ -23,6 +26,15 @@
 #include "battery/BatteryLedManager.h"
 
 // Arduino IDE ignores .cpp files located in subdirectories unless included:
+#include "config/SystemConfig.cpp"
+#include "config/WiFiConfig.cpp"
+#include "config/TankConfig.cpp"
+#include "config/TransmitterConfig.cpp"
+#include "config/BatteryLedConfig.cpp"
+#include "config/LoRaConfig.cpp"
+#include "config/TimeConfig.cpp"
+#include "config/ConfigJsonHelper.cpp"
+
 #include "protocol/PacketParser.cpp"
 #include "lora/LoRaManager.cpp"
 #include "tank/TankProcessor.cpp"
@@ -42,28 +54,23 @@
 
 void setup() {
 
-  Serial.begin(
-    115200
-  );
-
+  Serial.begin(115200);
   delay(500);
 
   Serial.println();
-  Serial.println(
-    "================================"
-  );
+  Serial.println("================================");
+  Serial.println("DASS HOME Receiver");
+  Serial.println("TankSync ESP32 Receiver");
+  Serial.println("================================");
 
-  Serial.println(
-    "DASS HOME Receiver"
-  );
-
-  Serial.println(
-    "LoRa Receiver"
-  );
-
-  Serial.println(
-    "================================"
-  );
+  // Initialize 7 distinct persistent configuration objects
+  systemConfig.begin();
+  wifiConfig.begin();
+  tankConfig.begin();
+  transmitterConfig.begin();
+  batteryConfig.begin();
+  loraConfigManager.begin();
+  timeConfig.begin();
 
   // Initialize display
   displayManager.begin();
@@ -71,8 +78,11 @@ void setup() {
   // Initialize battery LED indicator & INA219 monitor
   batteryLedManager.begin();
 
-  // Initialize button input (for normal & test mode navigation)
+  // Initialize button input (for normal navigation & long-press config mode)
   buttonManager.begin();
+
+  // Initialize Wi-Fi lifecycle (OFF by default, ready for config mode & packet sync)
+  wifiManager.begin();
 
 #if TEST_MODE
   displayManager.setTestMode(true);
@@ -81,20 +91,10 @@ void setup() {
   Serial.println("TEST MODE: ACTIVE");
   Serial.println("Displaying diagnostic test screens only.");
   Serial.println("Press button on GPIO 27 to cycle test screens.");
-  Serial.println("All normal screens disabled.");
+  Serial.println("Long press (2s) opens Configuration Mode.");
   Serial.println("================================");
   return;
 #endif
-
-  // =====================================================
-  // STEP 1: WI-FI STATUS CHECK & SETUP SCREEN
-  // (Executes first before LoRa and any data checks)
-  // =====================================================
-  wifiManager.begin();
-  wifiManager.runStartupFlow(displayManager, buttonManager);
-
-  // Initialize NTP time synchronization
-  timeManager.begin();
 
   // =====================================================
   // STEP 2: RESTORE TELEMETRY FROM PERSISTENT STORAGE
@@ -122,13 +122,8 @@ void setup() {
   }
 
   Serial.println();
-  Serial.println(
-    "Receiver ready."
-  );
-
-  Serial.println(
-    "Waiting for DASS HOME packets..."
-  );
+  Serial.println("Receiver ready.");
+  Serial.println("Wi-Fi is OFF by default. Listening for packets...");
 }
 
 // =====================================================
@@ -145,14 +140,17 @@ void loop() {
   // Detect transition into charging and trigger charging animation
   displayManager.checkChargingTransition(batteryLedManager.isCharging());
 
-  // Handle button input & page navigation
+  // Handle button input (short-press page navigation & long-press config mode)
   buttonManager.update();
 
-  // Unified display update (handles test screens, normal screens, animations & timeouts)
+  // Update Wi-Fi lifecycle manager (handles web server clients, captive portal & transient timestamp sync)
+  wifiManager.update();
+
+  // Unified display update (handles config mode screen, test screens, normal screens, animations & timeouts)
   displayManager.update();
 
 #if TEST_MODE
-  delay(5);
+  delay(2);
   return;
 #endif
 
@@ -169,33 +167,21 @@ void loop() {
   }
 
   if (packetReceived) {
+    // Both in mock data mode and real LoRa: request Wi-Fi timestamp synchronization
+    wifiManager.requestTimestampSync();
 
     DisplayData data;
-
-    if (
-      tankProcessor.process(
-        raw,
-        rssi,
-        snr,
-        data
-      )
-    ) {
-
-      // Attach current NTP epoch timestamp
+    if (tankProcessor.process(raw, rssi, snr, data)) {
+      // Attach current NTP epoch timestamp (or 0 fallback handled by TimeManager)
       data.timestamp = timeManager.getEpoch();
 
       // Persist latest telemetry to NVS flash across power cycles with data mode tag
       storageManager.save(data, data.timestamp, USE_MOCK_DATA);
 
       // Update in-memory cache and refresh display
-      displayManager.updateData(
-        data
-      );
+      displayManager.updateData(data);
     }
   }
 
-  // Update animations and dynamic footer elapsed time
-  displayManager.update();
-
-  delay(5);
+  delay(2);
 }

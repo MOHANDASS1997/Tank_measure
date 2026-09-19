@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include "../config/TankConfig.h"
+#include "../config/TransmitterConfig.h"
 #include "../models/Telemetry.h"
 #include "../models/DisplayData.h"
 

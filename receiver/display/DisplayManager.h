@@ -77,6 +77,7 @@ public:
   void drawWiFiConnectedScreen(const String& ssid, const String& ip);
   void showWiFiNudge(const String& ssid, const String& ip, const char* statusMsg = "Open IP in browser");
   void showWiFiConnected(const String& ssid, const String& ip);
+  void drawConfigScreen(const String& url, const String& ip, unsigned long remainingSec);
 
   void drawIna219TestScreen(const BatteryLedManager& batteryLed);
   void drawIna219TestScreen(
@@ -114,6 +115,7 @@ private:
   Page _savedPageBeforeAnimation;
   TestScreen _savedTestScreenBeforeAnimation;
   bool _lastChargingState;
+  bool _wasConfigModeActive;
 
   int _screenW;
   int _screenH;

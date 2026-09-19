@@ -59,7 +59,7 @@ void BatteryLedManager::update() {
   unsigned long now = millis();
 
   // Periodically read INA219 sensor data
-  if (now - _lastSensorRead >= BATTERY_POLL_INTERVAL_MS || _lastSensorRead == 0) {
+  if (now - _lastSensorRead >= batteryConfig.get().batteryPollIntervalMs || _lastSensorRead == 0) {
     _lastSensorRead = now;
     updateSensors();
   }
@@ -100,9 +100,9 @@ bool BatteryLedManager::isCharging() const {
 }
 
 const char* BatteryLedManager::getChargingStateStr() const {
-  if (_current_mA < CURRENT_CHARGING_THRESHOLD_MA) {
+  if (_current_mA < batteryConfig.get().currentChargingThresholdMa) {
     return "CHARGING";
-  } else if (_current_mA > CURRENT_DISCHARGING_THRESHOLD_MA) {
+  } else if (_current_mA > batteryConfig.get().currentDischargingThresholdMa) {
     return "DISCHARGING";
   } else {
     return "NOT CHARGING";
@@ -142,25 +142,30 @@ bool BatteryLedManager::areLedsEnabled() const {
 //              PERCENTAGE CALCULATION
 // =====================================================
 float BatteryLedManager::calculatePercentage(float voltage) {
-  // Voltage above or equal to highest point (4.20V)
-  if (voltage >= VOLTAGE_PERCENT_TABLE[0].voltage) {
+  const auto& cfg = batteryConfig.get();
+  if (cfg.voltageTableCount == 0) {
+    return 0.0f;
+  }
+
+  // Voltage above or equal to highest point
+  if (voltage >= cfg.voltageTable[0].voltage) {
     return 100.0f;
   }
 
-  // Voltage below or equal to lowest point (3.00V)
-  if (voltage <= VOLTAGE_PERCENT_TABLE[VOLTAGE_PERCENT_TABLE_SIZE - 1].voltage) {
+  // Voltage below or equal to lowest point
+  if (voltage <= cfg.voltageTable[cfg.voltageTableCount - 1].voltage) {
     return 0.0f;
   }
 
   // Piecewise linear interpolation between points
-  for (size_t i = 0; i < VOLTAGE_PERCENT_TABLE_SIZE - 1; i++) {
-    float vHigh = VOLTAGE_PERCENT_TABLE[i].voltage;
-    float vLow  = VOLTAGE_PERCENT_TABLE[i + 1].voltage;
-    float pHigh = VOLTAGE_PERCENT_TABLE[i].percent;
-    float pLow  = VOLTAGE_PERCENT_TABLE[i + 1].percent;
+  for (size_t i = 0; i < cfg.voltageTableCount - 1; i++) {
+    float vHigh = cfg.voltageTable[i].voltage;
+    float vLow  = cfg.voltageTable[i + 1].voltage;
+    float pHigh = cfg.voltageTable[i].percent;
+    float pLow  = cfg.voltageTable[i + 1].percent;
 
     if (voltage <= vHigh && voltage >= vLow) {
-      float fraction = (voltage - vLow) / (vHigh - vLow);
+      float fraction = (vHigh == vLow) ? 0.0f : (voltage - vLow) / (vHigh - vLow);
       float pct = pLow + fraction * (pHigh - pLow);
       return constrain(pct, 0.0f, 100.0f);
     }
@@ -173,18 +178,20 @@ float BatteryLedManager::calculatePercentage(float voltage) {
 //      CONFIGURABLE BATTERY PERCENTAGE TO LED COUNT
 // =====================================================
 uint8_t BatteryLedManager::calculateLedCount(float batteryPercent) {
-  for (size_t i = 0; i < BATTERY_LED_THRESHOLDS_COUNT; i++) {
-    if (batteryPercent > BATTERY_LED_THRESHOLDS[i].minPercent) {
-      return BATTERY_LED_THRESHOLDS[i].ledCount;
+  const auto& cfg = batteryConfig.get();
+  for (size_t i = 0; i < cfg.ledThresholdCount; i++) {
+    if (batteryPercent > cfg.ledThresholds[i].minPercent) {
+      return cfg.ledThresholds[i].ledCount;
     }
   }
   return 1;
 }
 
 uint8_t BatteryLedManager::calculateLedCountWithHysteresis(uint8_t currentCount, float batteryPercent, float hysteresis) {
-  for (size_t i = 0; i < BATTERY_LED_THRESHOLDS_COUNT; i++) {
-    float threshold = BATTERY_LED_THRESHOLDS[i].minPercent;
-    uint8_t count = BATTERY_LED_THRESHOLDS[i].ledCount;
+  const auto& cfg = batteryConfig.get();
+  for (size_t i = 0; i < cfg.ledThresholdCount; i++) {
+    float threshold = cfg.ledThresholds[i].minPercent;
+    uint8_t count = cfg.ledThresholds[i].ledCount;
 
     if (threshold <= 0.0f) {
       return count;
@@ -238,10 +245,7 @@ bool BatteryLedManager::updateChargingFullWithHysteresis(bool currentFull, float
 //              CHARGING DETECTION
 // =====================================================
 bool BatteryLedManager::isChargingCurrent(float current_mA) {
-  // Current < -50 mA  -> CHARGING
-  // Current > +50 mA  -> DISCHARGING
-  // -50 mA to +50 mA  -> NOT CHARGING
-  return (current_mA < CURRENT_CHARGING_THRESHOLD_MA);
+  return (current_mA < batteryConfig.get().currentChargingThresholdMa);
 }
 
 // =====================================================
@@ -254,19 +258,21 @@ void BatteryLedManager::updateSensors() {
   _current_mA = _ina219.getCurrent_mA();
   _power_mW = _ina219.getPower_mW();
 
+  const auto& cfg = batteryConfig.get();
+
   if (_firstSensorRead) {
     _voltage = rawVoltage;
     _firstSensorRead = false;
   } else {
-    _voltage = _voltage + BATTERY_VOLTAGE_EMA_ALPHA * (rawVoltage - _voltage);
+    _voltage = _voltage + cfg.batteryVoltageEmaAlpha * (rawVoltage - _voltage);
   }
 
   _charging = isChargingCurrent(_current_mA);
   _batteryPercent = calculatePercentage(_voltage);
 
-  _activeLedCount = calculateLedCountWithHysteresis(_activeLedCount, _batteryPercent, BATTERY_LED_HYSTERESIS_PERCENT);
-  _isLowBattery = updateLowBatteryWithHysteresis(_isLowBattery, _batteryPercent, BATTERY_LED_LOW_THRESHOLD, BATTERY_LED_HYSTERESIS_PERCENT);
-  _isChargingFull = updateChargingFullWithHysteresis(_isChargingFull, _batteryPercent, BATTERY_CHARGING_FULL_THRESHOLD, BATTERY_LED_HYSTERESIS_PERCENT);
+  _activeLedCount = calculateLedCountWithHysteresis(_activeLedCount, _batteryPercent, cfg.batteryLedHysteresisPercent);
+  _isLowBattery = updateLowBatteryWithHysteresis(_isLowBattery, _batteryPercent, cfg.batteryLedLowThreshold, cfg.batteryLedHysteresisPercent);
+  _isChargingFull = updateChargingFullWithHysteresis(_isChargingFull, _batteryPercent, cfg.batteryChargingFullThreshold, cfg.batteryLedHysteresisPercent);
 }
 
 // =====================================================
@@ -287,7 +293,7 @@ void BatteryLedManager::updateLeds() {
   }
 
   unsigned long now = millis();
-  bool blinkOn = ((now / BATTERY_LED_BLINK_INTERVAL_MS) % 2) == 0;
+  bool blinkOn = ((now / batteryConfig.get().batteryLedBlinkIntervalMs) % 2) == 0;
 
   BatteryLedMode led1Mode = LED_OFF;
   BatteryLedMode led2Mode = LED_OFF;

@@ -13,26 +13,7 @@ bool TankProcessor::findTransmitter(
   int transmitterAddress,
   TransmitterConfig &result
 ) {
-
-  for (
-    int i = 0;
-    i < TRANSMITTER_COUNT;
-    i++
-  ) {
-
-    if (
-      transmitters[i].transmitterAddress ==
-      transmitterAddress
-    ) {
-
-      result =
-        transmitters[i];
-
-      return true;
-    }
-  }
-
-  return false;
+  return transmitterConfig.findTransmitter(transmitterAddress, result);
 }
 
 // =====================================================
@@ -41,25 +22,7 @@ bool TankProcessor::findTank(
   const char* tankId,
   TankConfig &result
 ) {
-
-  for (
-    int i = 0;
-    i < TANK_COUNT;
-    i++
-  ) {
-
-    if (
-      strcmp(tanks[i].tankId, tankId) == 0
-    ) {
-
-      result =
-        tanks[i];
-
-      return true;
-    }
-  }
-
-  return false;
+  return tankConfig.findTank(tankId, result);
 }
 
 // =====================================================

@@ -4,51 +4,75 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
-#include <Preferences.h>
+#include <ESPmDNS.h>
 
 #include "../config/WiFiConfig.h"
-#include "../config/BoardConfig.h"
-#include "../display/DisplayManager.h"
-#include "../input/ButtonManager.h"
+#include "../config/SystemConfig.h"
 
-// =====================================================
-//                    WIFI MANAGER
-// =====================================================
+// Wi-Fi Consumer Bitmask
+enum WiFiConsumer : uint8_t {
+  CONSUMER_NONE        = 0x00,
+  CONSUMER_TIMESTAMP   = 0x01,
+  CONSUMER_CONFIG_MODE = 0x02
+};
+
+// Wi-Fi State Machine
+enum WiFiState : uint8_t {
+  WIFI_STATE_OFF,
+  WIFI_STATE_STA_CONNECTING,
+  WIFI_STATE_STA_CONNECTED,
+  WIFI_STATE_AP_ACTIVE
+};
 
 class WiFiManager {
 public:
   WiFiManager();
 
   void begin();
-  void runStartupFlow(DisplayManager& display, ButtonManager& button);
+  void update();
 
-  bool isConnected() const;
-  bool isAPActive() const;
+  // Consumer control
+  void requestTimestampSync();
+  void enterConfigMode();
+  void exitConfigMode();
+  void toggleConfigMode();
+
+  // Queries
+  bool isConfigModeActive() const { return (_consumers & CONSUMER_CONFIG_MODE) != 0; }
+  bool isTimestampSyncActive() const { return (_consumers & CONSUMER_TIMESTAMP) != 0; }
+  bool isConnected() const { return (_state == WIFI_STATE_STA_CONNECTED); }
+  bool isAPActive() const { return (_state == WIFI_STATE_AP_ACTIVE); }
+
   String getIP() const;
   String getSSID() const;
+  String getHostname() const { return "http://dasshome.local"; }
+  unsigned long getConfigModeRemainingSeconds() const;
 
 private:
-  bool _connected;
-  bool _isAP;
-  String _ip;
-  String _ssid;
+  uint8_t _consumers;
+  WiFiState _state;
 
-  String _newSSID;
-  String _newPassword;
-  bool _pendingConnect;
+  unsigned long _staConnectStartTime;
+  unsigned long _configModeStartTime;
+  unsigned long _timestampSyncStartTime;
 
   WebServer _server;
   DNSServer _dnsServer;
-  Preferences _preferences;
+  bool _mdnsStarted;
 
-  bool tryConnectSTA(const char* ssid, const char* password, unsigned long timeoutMs);
+  void applyPowerState();
+  void startSTAConnection();
   void startAP();
   void setupWebServer();
+  void stopWebServer();
+
+  // HTTP route handlers
   void handleRoot();
-  void handleSave();
+  void handleGetConfig();
+  void handlePostConfig();
+  void handleResetConfig();
+  void handleExitConfig();
   void handleCaptivePortal();
-  void saveCredentials(const String& ssid, const String& password);
-  void loadCredentials(String& ssid, String& password);
 };
 
 extern WiFiManager wifiManager;

@@ -1,57 +1,54 @@
 #pragma once
 
+#include <Arduino.h>
+#include <Preferences.h>
+
 // =====================================================
 //                  TANK CONFIGURATION
 // =====================================================
 
+#define MAX_TANKS 4
+
 struct TankConfig {
-  const char* tankId;
+  char tankId[16];
   float totalLengthCm;
   float totalCapacityLitres;
   float fullDistanceCm;
   float emptyDistanceCm;
 };
 
-const TankConfig tanks[] = {
-  {
-    "tank_1", // Tank ID
-    180.0,    // Total tank length (180 cm)
-    750.0,    // Total capacity (750 L)
-    15.0,     // Full distance (15 cm)
-    175.0     // Empty distance (175 cm)
-  }
+struct TankSettings {
+  uint16_t schemaVersion;
+  uint8_t count;
+  TankConfig tanks[MAX_TANKS];
 };
 
-const int TANK_COUNT = sizeof(tanks) / sizeof(tanks[0]);
+class TankConfigManager {
+public:
+  static const uint16_t CURRENT_SCHEMA_VERSION = 1;
 
-// =====================================================
-//              TRANSMITTER CONFIGURATION
-// =====================================================
+  TankConfigManager();
 
-struct TransmitterConfig {
-  int transmitterAddress;
-  const char* tankId;
+  void begin();
+  void loadDefaults();
+  bool load();
+  bool save();
+  bool validate(const TankSettings& settings, String& err);
 
-  // Sensor characteristics
-  float sensorMinDistanceCm;
-  float sensorMaxDistanceCm;
+  const TankSettings& get() const { return _settings; }
+  void set(const TankSettings& settings) { _settings = settings; }
 
-  // Battery characteristics
-  float batteryFullVoltage;
-  float batteryEmptyVoltage;
+  bool findTank(const char* tankId, TankConfig& result) const;
+  uint8_t getCount() const { return _settings.count; }
+  const TankConfig* getTanks() const { return _settings.tanks; }
+
+  bool addTank(const TankConfig& tank);
+  bool updateTank(uint8_t index, const TankConfig& tank);
+  bool removeTank(uint8_t index);
+
+private:
+  TankSettings _settings;
+  Preferences _prefs;
 };
 
-const TransmitterConfig transmitters[] = {
-  {
-    3201,     // Transmitter Address (Starts with 3201)
-    "tank_1", // Tank ID
-
-    25.0,     // Sensor minimum distance (25 cm)
-    400.0,    // Sensor maximum distance (400 cm)
-
-    4.20,     // Battery full voltage (4.20 V)
-    3.20      // Battery empty voltage (3.20 V)
-  }
-};
-
-const int TRANSMITTER_COUNT = sizeof(transmitters) / sizeof(transmitters[0]);
+extern TankConfigManager tankConfig;

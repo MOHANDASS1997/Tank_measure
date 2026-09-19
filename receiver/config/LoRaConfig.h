@@ -1,10 +1,14 @@
 #pragma once
 
+#include <Arduino.h>
+#include <Preferences.h>
+
 // =====================================================
 //                     LORA CONFIG
 // =====================================================
 
-struct LoRaConfig {
+struct LoRaSettings {
+  uint16_t schemaVersion;
   unsigned long band;
   int networkId;
   int address;
@@ -17,17 +21,27 @@ struct LoRaConfig {
   unsigned long baudRate;
 };
 
-const LoRaConfig loraConfig = {
-  867000000UL,  // Band
-  18,           // Network ID
-  3001,         // Receiver address
+class LoRaConfigManager {
+public:
+  static const uint16_t CURRENT_SCHEMA_VERSION = 1;
 
-  9,            // SF
-  7,            // BW
-  1,            // Coding rate
-  12,           // Preamble
+  LoRaConfigManager();
 
-  115200        // UART baud
+  void begin();
+  void loadDefaults();
+  bool load();
+  bool save();
+  bool validate(const LoRaSettings& settings, String& err);
+
+  const LoRaSettings& get() const { return _settings; }
+  void set(const LoRaSettings& settings) { _settings = settings; }
+
+private:
+  LoRaSettings _settings;
+  Preferences _prefs;
 };
+
+extern LoRaConfigManager loraConfigManager;
+#define loraConfig (loraConfigManager.get())
 
 const unsigned long LORA_TIMEOUT_MS = 15000;

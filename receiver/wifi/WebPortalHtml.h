@@ -1,0 +1,841 @@
+#pragma once
+
+#include <Arduino.h>
+
+const char WEB_PORTAL_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>DASS HOME - TankSync Config</title>
+<style>
+:root{
+  --bg:#090d16;
+  --surface:#111827;
+  --card:#1f293d;
+  --border:#374151;
+  --primary:#0284c7;
+  --primary-hover:#0369a1;
+  --accent:#38bdf8;
+  --text:#f3f4f6;
+  --text-dim:#9ca3af;
+  --danger:#ef4444;
+  --danger-hover:#dc2626;
+  --success:#10b981;
+  --warning:#f59e0b;
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;}
+body{background:var(--bg);color:var(--text);padding:16px;min-height:100vh;display:flex;flex-direction:column;align-items:center;}
+.container{width:100%;max-width:880px;}
+header{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 22px;margin-bottom:16px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand h1{font-size:20px;color:var(--accent);font-weight:700;letter-spacing:0.5px;}
+.badge{font-size:12px;padding:4px 10px;border-radius:999px;font-weight:600;}
+.badge-active{background:rgba(16,185,129,0.15);color:var(--success);border:1px solid rgba(16,185,129,0.3);}
+.badge-dirty{background:rgba(245,158,11,0.15);color:var(--warning);border:1px solid rgba(245,158,11,0.3);display:none;}
+.header-actions{display:flex;align-items:center;gap:10px;}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+.tab-btn{background:var(--surface);border:1px solid var(--border);color:var(--text-dim);padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:6px;}
+.tab-btn:hover{color:var(--text);border-color:var(--accent);}
+.tab-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+.panel{display:none;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:16px;}
+.panel.active{display:block;}
+.panel-title{font-size:17px;font-weight:700;color:var(--accent);margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;}
+.form-group{display:flex;flex-direction:column;gap:6px;}
+label{font-size:12px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;}
+input,select{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:14px;outline:none;transition:border-color 0.2s;}
+input:focus,select:focus{border-color:var(--accent);}
+input.dirty,select.dirty{border-color:var(--warning);background:rgba(245,158,11,0.05);}
+.table-wrap{overflow-x:auto;margin-top:12px;margin-bottom:12px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{background:var(--card);padding:10px 12px;text-align:left;color:var(--text-dim);font-weight:600;border:1px solid var(--border);}
+td{padding:8px 10px;border:1px solid var(--border);}
+td input{width:100%;padding:6px 8px;font-size:13px;}
+.btn-del{background:var(--danger);color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-weight:600;}
+.btn-del:hover{background:var(--danger-hover);}
+.btn-add{background:var(--card);border:1px dashed var(--accent);color:var(--accent);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:10px;transition:all 0.2s;}
+.btn-add:hover{background:rgba(56,189,248,0.1);}
+.panel-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);}
+.actions{position:sticky;bottom:16px;background:rgba(17,24,39,0.95);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:14px;padding:16px 20px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;box-shadow:0 10px 25px rgba(0,0,0,0.5);}
+.left-actions, .right-actions{display:flex;flex-wrap:wrap;gap:10px;}
+.btn-main{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;transition:background 0.2s;}
+.btn-main:hover{background:var(--primary-hover);}
+.btn-secondary{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;}
+.btn-secondary:hover{border-color:var(--accent);color:var(--accent);}
+.btn-reset{background:rgba(239,68,68,0.1);border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;}
+.btn-reset:hover{background:var(--danger);color:#fff;}
+#alertModal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);justify-content:center;align-items:center;z-index:999;}
+.modal-content{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:420px;width:90%;text-align:center;}
+.modal-title{font-size:18px;font-weight:700;color:var(--accent);margin-bottom:10px;}
+.modal-text{font-size:14px;color:var(--text-dim);margin-bottom:20px;line-height:1.5;}
+.modal-btns{display:flex;gap:10px;justify-content:center;}
+.toast{position:fixed;top:20px;right:20px;background:var(--surface);border:1px solid var(--accent);color:var(--text);padding:12px 18px;border-radius:10px;box-shadow:0 10px 20px rgba(0,0,0,0.4);font-size:14px;font-weight:600;z-index:1000;display:none;animation:fadeIn 0.3s;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-10px);}to{opacity:1;transform:translateY(0);}}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="brand">
+      <h1>DASS HOME</h1>
+      <span class="badge badge-active">Receiver Config Mode</span>
+      <span id="dirtyBadge" class="badge badge-dirty">&#9679; Unsaved Changes</span>
+    </div>
+    <div class="header-actions">
+      <span style="font-size:12px;color:var(--text-dim);margin-right:8px;">Host: <b style="color:var(--accent)">http://dasshome.local</b></span>
+      <button class="btn-reset" onclick="confirmResetSection('all')" style="padding:6px 12px;font-size:12px;">⚠️ Reset All</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab(0)">📶 Wi-Fi</button>
+    <button class="tab-btn" onclick="showTab(1)">🚰 Tanks</button>
+    <button class="tab-btn" onclick="showTab(2)">📡 Transmitters</button>
+    <button class="tab-btn" onclick="showTab(3)">🔋 Battery & Charge</button>
+    <button class="tab-btn" onclick="showTab(4)">🖥️ System & UI</button>
+    <button class="tab-btn" onclick="showTab(5)">📻 LoRa Radio</button>
+    <button class="tab-btn" onclick="showTab(6)">⏰ Time & NTP</button>
+  </div>
+
+  <!-- PANEL 0: WI-FI -->
+  <div class="panel active" id="p0">
+    <div class="panel-title">Wi-Fi Station Settings</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Wi-Fi SSID</label>
+        <input type="text" id="wifi_ssid" placeholder="Enter Wi-Fi SSID" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Wi-Fi Password</label>
+        <input type="password" id="wifi_pass" placeholder="Enter Wi-Fi Password" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Connection Timeout (ms)</label>
+        <input type="number" id="wifi_timeout" min="2000" max="30000" step="500" oninput="markDirty(this)">
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('wifi')">🔄 Reset Wi-Fi</button>
+      <button class="btn-main" onclick="saveSection('Wi-Fi')">💾 Save Wi-Fi</button>
+    </div>
+  </div>
+
+  <!-- PANEL 1: TANKS -->
+  <div class="panel" id="p1">
+    <div class="panel-title">
+      <span>Tank Configurations</span>
+      <button class="btn-add" onclick="addTankRow()">+ Add Tank</button>
+    </div>
+    <div class="table-wrap">
+      <table id="tankTable">
+        <thead>
+          <tr>
+            <th>Tank ID</th>
+            <th>Total Length (cm)</th>
+            <th>Capacity (L)</th>
+            <th>Full Dist (cm)</th>
+            <th>Empty Dist (cm)</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('tanks')">🔄 Reset Tanks</button>
+      <button class="btn-main" onclick="saveSection('Tanks')">💾 Save Tanks</button>
+    </div>
+  </div>
+
+  <!-- PANEL 2: TRANSMITTERS -->
+  <div class="panel" id="p2">
+    <div class="panel-title">
+      <span>Transmitter / Node Mapping</span>
+      <button class="btn-add" onclick="addTxRow()">+ Add Node</button>
+    </div>
+    <div class="table-wrap">
+      <table id="txTable">
+        <thead>
+          <tr>
+            <th>Address</th>
+            <th>Tank ID</th>
+            <th>Sensor Min (cm)</th>
+            <th>Sensor Max (cm)</th>
+            <th>Battery Full (V)</th>
+            <th>Battery Empty (V)</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('transmitters')">🔄 Reset Transmitters</button>
+      <button class="btn-main" onclick="saveSection('Transmitters')">💾 Save Transmitters</button>
+    </div>
+  </div>
+
+  <!-- PANEL 3: BATTERY & CHARGING -->
+  <div class="panel" id="p3">
+    <div class="panel-title">Battery Current & Thresholds</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Charging Current Threshold (mA)</label>
+        <input type="number" step="1.0" id="bat_chg_ma" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Discharging Current Threshold (mA)</label>
+        <input type="number" step="1.0" id="bat_dischg_ma" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Low Battery Alert Threshold (%)</label>
+        <input type="number" step="0.5" id="bat_low_pct" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Charging Full Threshold (%)</label>
+        <input type="number" step="0.5" id="bat_full_pct" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Hysteresis (%)</label>
+        <input type="number" step="0.1" id="bat_hyst" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Voltage EMA Filter Alpha</label>
+        <input type="number" step="0.05" min="0.01" max="1.0" id="bat_alpha" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Sensor Poll Interval (ms)</label>
+        <input type="number" step="50" id="bat_poll" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>LED Blink Interval (ms)</label>
+        <input type="number" step="50" id="bat_blink" oninput="markDirty(this)">
+      </div>
+    </div>
+
+    <div class="panel-title" style="margin-top:24px;">
+      <span>Voltage-to-Percentage Mapping Table</span>
+      <button class="btn-add" onclick="addVoltRow()">+ Add Voltage Point</button>
+    </div>
+    <div class="table-wrap">
+      <table id="voltTable">
+        <thead>
+          <tr><th>Voltage (V)</th><th>Battery (%)</th><th>Action</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel-title" style="margin-top:24px;">
+      <span>LED Count Thresholds</span>
+    </div>
+    <div class="table-wrap">
+      <table id="ledTable">
+        <thead>
+          <tr><th>No. of Active LEDs</th><th>Min Battery (%)</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-weight:700; color:var(--accent); font-size:15px;">4</td>
+            <td><input type="number" step="1.0" min="0" max="100" class="led_min" id="led_min_4" oninput="clampPct(this); markDirty(this)"></td>
+          </tr>
+          <tr>
+            <td style="font-weight:700; color:var(--accent); font-size:15px;">3</td>
+            <td><input type="number" step="1.0" min="0" max="100" class="led_min" id="led_min_3" oninput="clampPct(this); markDirty(this)"></td>
+          </tr>
+          <tr>
+            <td style="font-weight:700; color:var(--accent); font-size:15px;">2</td>
+            <td><input type="number" step="1.0" min="0" max="100" class="led_min" id="led_min_2" oninput="clampPct(this); markDirty(this)"></td>
+          </tr>
+          <tr>
+            <td style="font-weight:700; color:var(--accent); font-size:15px;">1</td>
+            <td><input type="number" step="1.0" min="0" max="100" class="led_min" id="led_min_1" oninput="clampPct(this); markDirty(this)"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('battery')">🔄 Reset Battery</button>
+      <button class="btn-main" onclick="saveSection('Battery')">💾 Save Battery</button>
+    </div>
+  </div>
+
+  <!-- PANEL 4: SYSTEM & UI -->
+  <div class="panel" id="p4">
+    <div class="panel-title">Display & Button Timings</div>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column: 1 / -1; display:flex; flex-direction:row; align-items:center; gap:10px; background:var(--card); padding:12px; border-radius:8px; border:1px solid var(--border);">
+        <input type="checkbox" id="sys_auto_sleep" onchange="toggleAutoSleepUI(); markDirty(this);" style="width:20px;height:20px;cursor:pointer;">
+        <label for="sys_auto_sleep" style="text-transform:none;font-size:14px;cursor:pointer;color:var(--text);">
+          Enable Auto-Sleep (Turn OLED OFF after inactivity timeout)
+        </label>
+      </div>
+      <div class="form-group" id="ui_timeout_group">
+        <label>OLED Screen Timeout (ms)</label>
+        <input type="number" step="1000" id="sys_ui_to" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Config Mode Auto-Exit Timeout (ms)</label>
+        <input type="number" step="10000" id="sys_cfg_to" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Button Long-Press Duration (ms)</label>
+        <input type="number" step="100" id="sys_lp_dur" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Charging Animation Duration (ms)</label>
+        <input type="number" step="100" id="sys_anim_dur" oninput="markDirty(this)">
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('system')">🔄 Reset System</button>
+      <button class="btn-main" onclick="saveSection('System')">💾 Save System</button>
+    </div>
+  </div>
+
+  <!-- PANEL 5: LORA -->
+  <div class="panel" id="p5">
+    <div class="panel-title">LoRa RYLR998 Receiver Parameters</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Frequency Band (Hz)</label>
+        <input type="number" id="lora_band" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Network ID</label>
+        <input type="number" id="lora_net" min="0" max="255" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Receiver Address</label>
+        <input type="number" id="lora_addr" min="0" max="65535" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Spreading Factor (7 - 12)</label>
+        <input type="number" id="lora_sf" min="7" max="12" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Bandwidth Index</label>
+        <input type="number" id="lora_bw" min="0" max="9" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Coding Rate (1 - 4)</label>
+        <input type="number" id="lora_cr" min="1" max="4" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Preamble Length</label>
+        <input type="number" id="lora_preamble" min="4" max="255" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>UART Baud Rate</label>
+        <input type="number" id="lora_baud" oninput="markDirty(this)">
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('lora')">🔄 Reset LoRa</button>
+      <button class="btn-main" onclick="saveSection('LoRa')">💾 Save LoRa</button>
+    </div>
+  </div>
+
+  <!-- PANEL 6: TIME -->
+  <div class="panel" id="p6">
+    <div class="panel-title">NTP Time Synchronization</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Primary NTP Server</label>
+        <input type="text" id="time_ntp1" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Secondary NTP Server</label>
+        <input type="text" id="time_ntp2" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>GMT Offset (seconds)</label>
+        <input type="number" id="time_gmt" oninput="markDirty(this)">
+      </div>
+      <div class="form-group">
+        <label>Daylight Offset (seconds)</label>
+        <input type="number" id="time_daylight" oninput="markDirty(this)">
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('time')">🔄 Reset Time</button>
+      <button class="btn-main" onclick="saveSection('Time')">💾 Save Time</button>
+    </div>
+  </div>
+
+  <!-- STICKY ACTION BAR -->
+  <div class="actions">
+    <div class="left-actions">
+      <button class="btn-main" onclick="saveSection('All')">💾 SAVE ALL</button>
+    </div>
+    <div class="right-actions">
+      <button class="btn-secondary" onclick="exitConfigMode()">Exit Config Mode</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div id="alertModal">
+  <div class="modal-content">
+    <div class="modal-title" id="modalTitle">Confirm Action</div>
+    <div class="modal-text" id="modalText">Are you sure?</div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-reset" id="modalConfirmBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let isDirty = false;
+let configData = {};
+
+function showToast(msg, isError=false){
+  const t = document.getElementById('toast');
+  t.innerText = msg;
+  t.style.borderColor = isError ? 'var(--danger)' : 'var(--accent)';
+  t.style.display = 'block';
+  setTimeout(()=>{ t.style.display = 'none'; }, 3500);
+}
+
+function markDirty(el){
+  if(el) el.classList.add('dirty');
+  isDirty = true;
+  document.getElementById('dirtyBadge').style.display = 'inline-block';
+}
+
+function clearDirty(){
+  isDirty = false;
+  document.querySelectorAll('.dirty').forEach(e => e.classList.remove('dirty'));
+  document.getElementById('dirtyBadge').style.display = 'none';
+}
+
+function showTab(idx){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=> b.classList.toggle('active', i===idx));
+  document.querySelectorAll('.panel').forEach((p,i)=> p.classList.toggle('active', i===idx));
+}
+
+function toggleAutoSleepUI(){
+  const enabled = document.getElementById('sys_auto_sleep').checked;
+  const toGrp = document.getElementById('ui_timeout_group');
+  const inp = document.getElementById('sys_ui_to');
+  if(!enabled){
+    toGrp.style.opacity = '0.4';
+    inp.disabled = true;
+  } else {
+    toGrp.style.opacity = '1.0';
+    inp.disabled = false;
+  }
+}
+
+function fetchConfig(){
+  fetch('/api/config')
+    .then(r => r.json())
+    .then(data => {
+      configData = data;
+      populateForm(data);
+      clearDirty();
+    })
+    .catch(e => {
+      showToast("Failed to load settings from receiver", true);
+    });
+}
+
+function populateForm(d){
+  // Wi-Fi
+  if(d.wifi){
+    document.getElementById('wifi_ssid').value = d.wifi.ssid || '';
+    document.getElementById('wifi_pass').value = d.wifi.password || '';
+    document.getElementById('wifi_timeout').value = d.wifi.connectTimeoutMs || 8000;
+  }
+  // Tanks
+  const tBody = document.querySelector('#tankTable tbody');
+  tBody.innerHTML = '';
+  if(d.tanks && d.tanks.tanks){
+    d.tanks.tanks.forEach((t, i) => {
+      tBody.appendChild(createTankRow(t, i));
+    });
+  }
+  // Transmitters
+  const txBody = document.querySelector('#txTable tbody');
+  txBody.innerHTML = '';
+  if(d.transmitters && d.transmitters.transmitters){
+    d.transmitters.transmitters.forEach((tx, i) => {
+      txBody.appendChild(createTxRow(tx, i));
+    });
+  }
+  // Battery
+  if(d.battery){
+    document.getElementById('bat_chg_ma').value = d.battery.currentChargingThresholdMa;
+    document.getElementById('bat_dischg_ma').value = d.battery.currentDischargingThresholdMa;
+    document.getElementById('bat_low_pct').value = d.battery.batteryLedLowThreshold;
+    document.getElementById('bat_full_pct').value = d.battery.batteryChargingFullThreshold;
+    document.getElementById('bat_hyst').value = d.battery.batteryLedHysteresisPercent;
+    document.getElementById('bat_alpha').value = d.battery.batteryVoltageEmaAlpha;
+    document.getElementById('bat_poll').value = d.battery.batteryPollIntervalMs;
+    document.getElementById('bat_blink').value = d.battery.batteryLedBlinkIntervalMs;
+
+    const vBody = document.querySelector('#voltTable tbody');
+    vBody.innerHTML = '';
+    if(d.battery.voltageTable){
+      d.battery.voltageTable.forEach((pt, i) => {
+        vBody.appendChild(createVoltRow(pt));
+      });
+    }
+
+    // Populate the 4 LED thresholds (4, 3, 2, 1)
+    const findLedPct = (cnt, defVal) => {
+      if (d.battery.ledThresholds) {
+        const found = d.battery.ledThresholds.find(t => t.ledCount === cnt);
+        if (found && typeof found.minPercent === 'number') {
+          return Math.min(100, Math.max(0, found.minPercent)).toFixed(0);
+        }
+      }
+      return defVal;
+    };
+    document.getElementById('led_min_4').value = findLedPct(4, '85');
+    document.getElementById('led_min_3').value = findLedPct(3, '60');
+    document.getElementById('led_min_2').value = findLedPct(2, '25');
+    document.getElementById('led_min_1').value = findLedPct(1, '0');
+  }
+  // System
+  if(d.system){
+    document.getElementById('sys_auto_sleep').checked = (d.system.autoSleepEnabled !== false);
+    document.getElementById('sys_ui_to').value = d.system.uiTimeoutMs;
+    document.getElementById('sys_cfg_to').value = d.system.configTimeoutMs;
+    document.getElementById('sys_lp_dur').value = d.system.longPressDurationMs;
+    document.getElementById('sys_anim_dur').value = d.system.chargingAnimationDurationMs;
+    toggleAutoSleepUI();
+  }
+  // LoRa
+  if(d.lora){
+    document.getElementById('lora_band').value = d.lora.band;
+    document.getElementById('lora_net').value = d.lora.networkId;
+    document.getElementById('lora_addr').value = d.lora.address;
+    document.getElementById('lora_sf').value = d.lora.spreadingFactor;
+    document.getElementById('lora_bw').value = d.lora.bandwidth;
+    document.getElementById('lora_cr').value = d.lora.codingRate;
+    document.getElementById('lora_preamble').value = d.lora.preambleLength;
+    document.getElementById('lora_baud').value = d.lora.baudRate;
+  }
+  // Time
+  if(d.time){
+    document.getElementById('time_ntp1').value = d.time.ntpServer1 || '';
+    document.getElementById('time_ntp2').value = d.time.ntpServer2 || '';
+    document.getElementById('time_gmt').value = d.time.gmtOffsetSec;
+    document.getElementById('time_daylight').value = d.time.daylightOffsetSec;
+  }
+}
+
+// Tanks Row Helpers
+function createTankRow(t, i){
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="tank_id" value="${t.tankId||'tank_'+(i+1)}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="0.5" class="tank_len" value="${t.totalLengthCm}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="1.0" class="tank_cap" value="${t.totalCapacityLitres}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="0.5" class="tank_full" value="${t.fullDistanceCm}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="0.5" class="tank_empty" value="${t.emptyDistanceCm}" oninput="markDirty(this)"></td>
+    <td><button class="btn-del" onclick="delTankRow(this)">Delete</button></td>
+  `;
+  return tr;
+}
+
+function addTankRow(){
+  const tBody = document.querySelector('#tankTable tbody');
+  if(tBody.children.length >= 4){
+    showToast("Maximum 4 tanks allowed", true);
+    return;
+  }
+  const idx = tBody.children.length + 1;
+  const t = {tankId:'tank_'+idx, totalLengthCm:180, totalCapacityLitres:750, fullDistanceCm:15, emptyDistanceCm:175};
+  tBody.appendChild(createTankRow(t, idx-1));
+  markDirty();
+}
+
+function delTankRow(btn){
+  const tBody = document.querySelector('#tankTable tbody');
+  if(tBody.children.length <= 1){
+    showToast("At least one tank configuration must exist", true);
+    return;
+  }
+  btn.closest('tr').remove();
+  markDirty();
+}
+
+// Transmitters Row Helpers
+function createTxRow(tx, i){
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="number" class="tx_addr" value="${tx.transmitterAddress||3201}" oninput="markDirty(this)"></td>
+    <td><input type="text" class="tx_tank" value="${tx.tankId||'tank_1'}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="0.5" class="tx_smin" value="${tx.sensorMinDistanceCm}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="0.5" class="tx_smax" value="${tx.sensorMaxDistanceCm}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="0.05" class="tx_bfull" value="${tx.batteryFullVoltage}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="0.05" class="tx_bempty" value="${tx.batteryEmptyVoltage}" oninput="markDirty(this)"></td>
+    <td><button class="btn-del" onclick="delTxRow(this)">Delete</button></td>
+  `;
+  return tr;
+}
+
+function addTxRow(){
+  const txBody = document.querySelector('#txTable tbody');
+  if(txBody.children.length >= 4){
+    showToast("Maximum 4 nodes allowed", true);
+    return;
+  }
+  const idx = txBody.children.length + 1;
+  const tx = {transmitterAddress:3200+idx, tankId:'tank_1', sensorMinDistanceCm:25, sensorMaxDistanceCm:400, batteryFullVoltage:4.20, batteryEmptyVoltage:3.20};
+  txBody.appendChild(createTxRow(tx, idx-1));
+  markDirty();
+}
+
+function delTxRow(btn){
+  const txBody = document.querySelector('#txTable tbody');
+  if(txBody.children.length <= 1){
+    showToast("At least one transmitter node must exist", true);
+    return;
+  }
+  btn.closest('tr').remove();
+  markDirty();
+}
+
+// Helper to clamp percentage values to [0, 100]
+function clampPct(el){
+  let v = parseFloat(el.value);
+  if(isNaN(v)) return;
+  if(v < 0) el.value = 0;
+  else if(v > 100) el.value = 100;
+}
+
+// Voltage Table Row Helpers
+function createVoltRow(pt){
+  const tr = document.createElement('tr');
+  const voltVal = (pt && typeof pt.voltage === 'number') ? pt.voltage.toFixed(2) : '3.70';
+  const pctVal = (pt && typeof pt.percent === 'number') ? Math.min(100, Math.max(0, pt.percent)).toFixed(1) : '50.0';
+  tr.innerHTML = `
+    <td><input type="number" step="0.01" min="0" max="20" class="v_volt" value="${voltVal}" oninput="markDirty(this)"></td>
+    <td><input type="number" step="0.5" min="0" max="100" class="v_pct" value="${pctVal}" oninput="clampPct(this); markDirty(this)"></td>
+    <td><button class="btn-del" onclick="delVoltRow(this)">Delete</button></td>
+  `;
+  return tr;
+}
+
+function addVoltRow(){
+  const vBody = document.querySelector('#voltTable tbody');
+  if(vBody.children.length >= 16){
+    showToast("Maximum 16 points allowed", true);
+    return;
+  }
+  vBody.appendChild(createVoltRow({voltage:3.70, percent:50.0}));
+  markDirty();
+}
+
+function delVoltRow(btn){
+  const vBody = document.querySelector('#voltTable tbody');
+  if(vBody.children.length <= 1){
+    showToast("At least 1 point required in voltage curve", true);
+    return;
+  }
+  btn.closest('tr').remove();
+  markDirty();
+}
+
+function collectData(){
+  const payload = {
+    wifi: {
+      ssid: document.getElementById('wifi_ssid').value.trim(),
+      password: document.getElementById('wifi_pass').value,
+      connectTimeoutMs: parseInt(document.getElementById('wifi_timeout').value) || 8000
+    },
+    tanks: {
+      count: 0,
+      tanks: []
+    },
+    transmitters: {
+      count: 0,
+      transmitters: []
+    },
+    battery: {
+      currentChargingThresholdMa: parseFloat(document.getElementById('bat_chg_ma').value),
+      currentDischargingThresholdMa: parseFloat(document.getElementById('bat_dischg_ma').value),
+      batteryLedLowThreshold: parseFloat(document.getElementById('bat_low_pct').value),
+      batteryChargingFullThreshold: parseFloat(document.getElementById('bat_full_pct').value),
+      batteryLedHysteresisPercent: parseFloat(document.getElementById('bat_hyst').value),
+      batteryVoltageEmaAlpha: parseFloat(document.getElementById('bat_alpha').value),
+      batteryPollIntervalMs: parseInt(document.getElementById('bat_poll').value),
+      batteryLedBlinkIntervalMs: parseInt(document.getElementById('bat_blink').value),
+      voltageTableCount: 0,
+      voltageTable: [],
+      ledThresholdCount: 0,
+      ledThresholds: []
+    },
+    system: {
+      uiTimeoutMs: parseInt(document.getElementById('sys_ui_to').value),
+      configTimeoutMs: parseInt(document.getElementById('sys_cfg_to').value),
+      longPressDurationMs: parseInt(document.getElementById('sys_lp_dur').value),
+      chargingAnimationDurationMs: parseInt(document.getElementById('sys_anim_dur').value),
+      autoSleepEnabled: document.getElementById('sys_auto_sleep').checked
+    },
+    lora: {
+      band: parseInt(document.getElementById('lora_band').value),
+      networkId: parseInt(document.getElementById('lora_net').value),
+      address: parseInt(document.getElementById('lora_addr').value),
+      spreadingFactor: parseInt(document.getElementById('lora_sf').value),
+      bandwidth: parseInt(document.getElementById('lora_bw').value),
+      codingRate: parseInt(document.getElementById('lora_cr').value),
+      preambleLength: parseInt(document.getElementById('lora_preamble').value),
+      baudRate: parseInt(document.getElementById('lora_baud').value)
+    },
+    time: {
+      ntpServer1: document.getElementById('time_ntp1').value.trim(),
+      ntpServer2: document.getElementById('time_ntp2').value.trim(),
+      gmtOffsetSec: parseInt(document.getElementById('time_gmt').value),
+      daylightOffsetSec: parseInt(document.getElementById('time_daylight').value)
+    }
+  };
+
+  // Collect Tanks
+  document.querySelectorAll('#tankTable tbody tr').forEach(tr => {
+    payload.tanks.tanks.push({
+      tankId: tr.querySelector('.tank_id').value.trim(),
+      totalLengthCm: parseFloat(tr.querySelector('.tank_len').value),
+      totalCapacityLitres: parseFloat(tr.querySelector('.tank_cap').value),
+      fullDistanceCm: parseFloat(tr.querySelector('.tank_full').value),
+      emptyDistanceCm: parseFloat(tr.querySelector('.tank_empty').value)
+    });
+  });
+  payload.tanks.count = payload.tanks.tanks.length;
+
+  // Collect Transmitters
+  document.querySelectorAll('#txTable tbody tr').forEach(tr => {
+    payload.transmitters.transmitters.push({
+      transmitterAddress: parseInt(tr.querySelector('.tx_addr').value),
+      tankId: tr.querySelector('.tx_tank').value.trim(),
+      sensorMinDistanceCm: parseFloat(tr.querySelector('.tx_smin').value),
+      sensorMaxDistanceCm: parseFloat(tr.querySelector('.tx_smax').value),
+      batteryFullVoltage: parseFloat(tr.querySelector('.tx_bfull').value),
+      batteryEmptyVoltage: parseFloat(tr.querySelector('.tx_bempty').value)
+    });
+  });
+  payload.transmitters.count = payload.transmitters.transmitters.length;
+
+  // Collect Voltage Table
+  document.querySelectorAll('#voltTable tbody tr').forEach(tr => {
+    const vEl = tr.querySelector('.v_volt');
+    const pEl = tr.querySelector('.v_pct');
+    if (vEl && pEl) {
+      let v = parseFloat(vEl.value);
+      let p = parseFloat(pEl.value);
+      if (!isNaN(v) && !isNaN(p)) {
+        p = Math.min(100, Math.max(0, p));
+        payload.battery.voltageTable.push({ voltage: v, percent: p });
+      }
+    }
+  });
+  payload.battery.voltageTableCount = payload.battery.voltageTable.length;
+
+  // Collect LED Thresholds (Fixed 4 rows: 4, 3, 2, 1)
+  const getCleanPct = (id, defVal) => {
+    const el = document.getElementById(id);
+    let val = el ? parseFloat(el.value) : defVal;
+    if (isNaN(val)) val = defVal;
+    return Math.min(100, Math.max(0, val));
+  };
+  payload.battery.ledThresholds = [
+    { minPercent: getCleanPct('led_min_4', 85.0), ledCount: 4 },
+    { minPercent: getCleanPct('led_min_3', 60.0), ledCount: 3 },
+    { minPercent: getCleanPct('led_min_2', 25.0), ledCount: 2 },
+    { minPercent: getCleanPct('led_min_1', 0.0), ledCount: 1 }
+  ];
+  payload.battery.ledThresholdCount = 4;
+
+  return payload;
+}
+
+function saveSection(name){
+  const payload = collectData();
+  fetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(res => {
+    if(res.success){
+      showToast(`${name} settings saved successfully!`);
+      clearDirty();
+    } else {
+      showToast("Validation Error: " + (res.error || "Save rejected"), true);
+    }
+  })
+  .catch(e => {
+    showToast("Network error while saving settings", true);
+  });
+}
+
+function confirmResetSection(sec){
+  const title = (sec === 'all') ? 'Reset All Settings?' : `Reset ${sec.toUpperCase()}?`;
+  const msg = (sec === 'all') 
+    ? 'Are you sure you want to restore all 7 configuration objects to firmware factory defaults? Unsaved changes will be lost.' 
+    : `Are you sure you want to reset ${sec.toUpperCase()} to firmware factory defaults?`;
+
+  showModal(title, msg, ()=>{
+    fetch('/api/reset?section=' + encodeURIComponent(sec), {method: 'POST'})
+      .then(r => r.json())
+      .then(res => {
+        closeModal();
+        if(res.success){
+          showToast(`Reset ${sec} to factory defaults!`);
+          fetchConfig();
+        } else {
+          showToast("Reset failed: " + res.error, true);
+        }
+      })
+      .catch(e => {
+        closeModal();
+        showToast("Error executing reset request", true);
+      });
+  });
+}
+
+function exitConfigMode(){
+  showModal("Exit Configuration Mode?", 
+            "The receiver will stop the Web UI and return to normal operation.", 
+            ()=>{
+    fetch('/api/exit', {method: 'POST'})
+      .then(()=>{
+        closeModal();
+        document.body.innerHTML = `
+          <div style="text-align:center;padding:50px;color:#9ca3af;">
+            <h2 style="color:#38bdf8;margin-bottom:12px;">Configuration Mode Closed</h2>
+            <p>The receiver has exited configuration mode and returned to normal monitoring.</p>
+            <p style="margin-top:20px;font-size:13px;">You may close this browser tab.</p>
+          </div>
+        `;
+      });
+  });
+}
+
+function showModal(title, text, onConfirm){
+  document.getElementById('modalTitle').innerText = title;
+  document.getElementById('modalText').innerText = text;
+  document.getElementById('modalConfirmBtn').onclick = onConfirm;
+  document.getElementById('alertModal').style.display = 'flex';
+}
+
+function closeModal(){
+  document.getElementById('alertModal').style.display = 'none';
+}
+
+window.onload = fetchConfig;
+</script>
+</body>
+</html>
+)rawliteral";

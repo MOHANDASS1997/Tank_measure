@@ -1,5 +1,7 @@
 #include "DisplayManager.h"
 #include "../battery/BatteryLedManager.h"
+#include "../wifi/WiFiManager.h"
+#include "../config/SystemConfig.h"
 
 // Instantiate global DisplayManager
 DisplayManager displayManager;
@@ -17,6 +19,7 @@ DisplayManager::DisplayManager()
     _savedPageBeforeAnimation(PAGE_TANK),
     _savedTestScreenBeforeAnimation(TEST_SCREEN_INA219),
     _lastChargingState(false),
+    _wasConfigModeActive(false),
     _screenW(128),
     _screenH(64),
     _minDim(64),
@@ -1422,7 +1425,13 @@ void DisplayManager::drawCurrentScreen() {
     return;
   }
 
-  // If in test mode, render active test screen directly
+  // Priority 1: Configuration Mode Screen
+  if (wifiManager.isConfigModeActive()) {
+    drawConfigScreen(wifiManager.getHostname(), wifiManager.getIP(), wifiManager.getConfigModeRemainingSeconds());
+    return;
+  }
+
+  // Priority 2: Test Mode Screen
   if (_testMode) {
     updateTestScreen();
     return;
@@ -1512,6 +1521,11 @@ void DisplayManager::showWiFiConnected(
 }
 
 void DisplayManager::switchPage() {
+
+  // If in config mode, do not switch normal page
+  if (wifiManager.isConfigModeActive()) {
+    return;
+  }
 
   // If in test mode, cycle to next test screen
   if (_testMode) {
@@ -1702,10 +1716,39 @@ void DisplayManager::update() {
     return;
   }
 
-  // 2. Handle UI Inactivity Timeout
+  // Handle Configuration Mode rendering & transitions
+  bool isConfig = wifiManager.isConfigModeActive();
+  if (isConfig != _wasConfigModeActive) {
+    _wasConfigModeActive = isConfig;
+    _lastUiActivityTime = now; // Start fresh 15s timer from the moment config mode exits
+    if (!_displayAwake) {
+      wakeDisplay();
+    }
+    drawCurrentScreen();
+  }
+
+  if (isConfig) {
+    // Keep display awake while in Configuration Mode
+    _lastUiActivityTime = now;
+    if (!_displayAwake) {
+      wakeDisplay();
+    }
+
+    static unsigned long lastConfigScreenUpdate = 0;
+    if (now - lastConfigScreenUpdate >= 1000) {
+      lastConfigScreenUpdate = now;
+      drawCurrentScreen();
+    }
+    return;
+  }
+
+  // 2. Handle UI Inactivity Timeout (Normal Mode)
+  _uiTimeoutMs = systemConfig.get().uiTimeoutMs;
   if (_displayAwake) {
-    if (now - _lastUiActivityTime >= _uiTimeoutMs) {
-      sleepDisplay();
+    if (systemConfig.get().autoSleepEnabled && _uiTimeoutMs > 0) {
+      if (now - _lastUiActivityTime >= _uiTimeoutMs) {
+        sleepDisplay();
+      }
     }
   }
 
@@ -1849,6 +1892,49 @@ void DisplayManager::drawIna219TestScreen(
     numStr[1] = '\0';
     _display.drawStr(cx + 5, 60, numStr);
   }
+
+  _display.sendBuffer();
+}
+
+// =====================================================
+//             DEDICATED CONFIGURATION SCREEN
+// =====================================================
+
+void DisplayManager::drawConfigScreen(
+  const String& url,
+  const String& ip,
+  unsigned long remainingSec
+) {
+  _display.clearBuffer();
+
+  // Header: inverted banner
+  _display.drawBox(0, 0, _screenW, 11);
+  _display.setDrawColor(0);
+  _display.setFont(u8g2_font_6x10_tr);
+  const char* title = "CONFIG MODE";
+  int titleWidth = _display.getStrWidth(title);
+  _display.drawStr((_screenW - titleWidth) / 2, 9, title);
+
+  // Body
+  _display.setDrawColor(1);
+  setSmallFont();
+  _display.drawStr(4, 21, "Open in Browser:");
+
+  setLabelFont();
+  _display.drawStr(4, 33, url.c_str());
+
+  setSmallFont();
+  String ipLine = "IP: " + ip;
+  _display.drawStr(4, 45, ipLine.c_str());
+
+  // Divider line
+  _display.drawHLine(0, 49, _screenW);
+
+  // Footer: Countdown timer / hold button to exit
+  char footBuf[32];
+  snprintf(footBuf, sizeof(footBuf), "Auto-exit: %lum %02lus", remainingSec / 60, remainingSec % 60);
+  int footWidth = _display.getStrWidth(footBuf);
+  _display.drawStr((_screenW - footWidth) / 2, 59, footBuf);
 
   _display.sendBuffer();
 }
