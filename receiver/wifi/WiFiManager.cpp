@@ -12,7 +12,9 @@ WiFiManager::WiFiManager()
     _configModeStartTime(0),
     _timestampSyncStartTime(0),
     _server(80),
-    _mdnsStarted(false) {
+    _mdnsStarted(false),
+    _serverRoutesConfigured(false),
+    _serverRunning(false) {
 }
 
 void WiFiManager::begin() {
@@ -65,7 +67,8 @@ void WiFiManager::startSTAConnection() {
 
 void WiFiManager::startAP() {
   Serial.println("[WiFi] Starting Fallback Access Point: " WIFI_AP_SSID);
-  WiFi.mode(WIFI_AP_STA);
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_AP);
   if (strlen(WIFI_AP_PASSWORD) > 0) {
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
   } else {
@@ -79,35 +82,42 @@ void WiFiManager::startAP() {
 }
 
 void WiFiManager::setupWebServer() {
-  // Endpoints
-  _server.on("/", HTTP_GET, [this]() { handleRoot(); });
-  _server.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
-  _server.on("/api/config", HTTP_POST, [this]() { handlePostConfig(); });
-  _server.on("/api/reset", HTTP_POST, [this]() { handleResetConfig(); });
-  _server.on("/api/exit", HTTP_POST, [this]() { handleExitConfig(); });
+  if (!_serverRoutesConfigured) {
+    // Endpoints
+    _server.on("/", HTTP_GET, [this]() { handleRoot(); });
+    _server.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
+    _server.on("/api/config", HTTP_POST, [this]() { handlePostConfig(); });
+    _server.on("/api/reset", HTTP_POST, [this]() { handleResetConfig(); });
+    _server.on("/api/exit", HTTP_POST, [this]() { handleExitConfig(); });
 
-  // Browser icon handlers (prevent 302 redirect loops in AP mode)
-  _server.on("/favicon.ico", HTTP_GET, [this]() { _server.send(204); });
-  _server.on("/apple-touch-icon.png", HTTP_GET, [this]() { _server.send(204); });
-  _server.on("/apple-touch-icon-precomposed.png", HTTP_GET, [this]() { _server.send(204); });
+    // Browser icon handlers (prevent 302 redirect loops in AP mode)
+    _server.on("/favicon.ico", HTTP_GET, [this]() { _server.send(204); });
+    _server.on("/apple-touch-icon.png", HTTP_GET, [this]() { _server.send(204); });
+    _server.on("/apple-touch-icon-precomposed.png", HTTP_GET, [this]() { _server.send(204); });
 
-  // Captive portal redirects
-  _server.on("/generate_204", [this]() { handleCaptivePortal(); });
-  _server.on("/hotspot-detect.html", [this]() { handleCaptivePortal(); });
-  _server.on("/canonical.html", [this]() { handleCaptivePortal(); });
-  _server.on("/connecttest.txt", [this]() { handleCaptivePortal(); });
-  _server.on("/ncsi.txt", [this]() { handleCaptivePortal(); });
+    // Captive portal redirects
+    _server.on("/generate_204", [this]() { handleCaptivePortal(); });
+    _server.on("/hotspot-detect.html", [this]() { handleCaptivePortal(); });
+    _server.on("/canonical.html", [this]() { handleCaptivePortal(); });
+    _server.on("/connecttest.txt", [this]() { handleCaptivePortal(); });
+    _server.on("/ncsi.txt", [this]() { handleCaptivePortal(); });
 
-  _server.onNotFound([this]() {
-    if (_state == WIFI_STATE_AP_ACTIVE) {
-      handleCaptivePortal();
-    } else {
-      _server.send(404, "text/plain", "Not Found");
-    }
-  });
+    _server.onNotFound([this]() {
+      if (_state == WIFI_STATE_AP_ACTIVE) {
+        handleCaptivePortal();
+      } else {
+        _server.send(404, "text/plain", "Not Found");
+      }
+    });
 
-  _server.begin();
-  Serial.println("[WebUI] Web server started on port 80.");
+    _serverRoutesConfigured = true;
+  }
+
+  if (!_serverRunning) {
+    _server.begin();
+    _serverRunning = true;
+    Serial.println("[WebUI] Web server started on port 80.");
+  }
 
   if (!_mdnsStarted) {
     if (MDNS.begin(MDNS_HOSTNAME)) {
@@ -121,7 +131,11 @@ void WiFiManager::setupWebServer() {
 }
 
 void WiFiManager::stopWebServer() {
-  _server.stop();
+  if (_serverRunning) {
+    _server.stop();
+    _serverRunning = false;
+    Serial.println("[WebUI] Web server stopped.");
+  }
   if (_state == WIFI_STATE_AP_ACTIVE) {
     _dnsServer.stop();
     WiFi.softAPdisconnect(true);
@@ -130,7 +144,6 @@ void WiFiManager::stopWebServer() {
     MDNS.end();
     _mdnsStarted = false;
   }
-  Serial.println("[WebUI] Web server stopped.");
 }
 
 void WiFiManager::requestTimestampSync() {
@@ -190,7 +203,9 @@ void WiFiManager::update() {
     }
 
     // Handle web server clients and DNS requests
-    _server.handleClient();
+    if (_serverRunning) {
+      _server.handleClient();
+    }
     if (_state == WIFI_STATE_AP_ACTIVE) {
       _dnsServer.processNextRequest();
     }
@@ -275,7 +290,15 @@ unsigned long WiFiManager::getConfigModeRemainingSeconds() const {
 
 void WiFiManager::handleRoot() {
   _configModeStartTime = millis(); // Reset inactivity timer on UI interactions
-  _server.send_P(200, "text/html", WEB_PORTAL_HTML);
+  _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  _server.send(200, "text/html", "");
+  size_t total = strlen_P(WEB_PORTAL_HTML);
+  for (size_t offset = 0; offset < total; offset += 1024) {
+    size_t chunk = min((size_t)1024, total - offset);
+    _server.sendContent_P(WEB_PORTAL_HTML + offset, chunk);
+    yield();
+  }
+  _server.sendContent(""); // Terminating chunk
 }
 
 void WiFiManager::handleGetConfig() {

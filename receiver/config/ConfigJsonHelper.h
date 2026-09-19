@@ -8,6 +8,7 @@
 #include "SystemConfig.h"
 #include "LoRaConfig.h"
 #include "TimeConfig.h"
+#include "DevConfig.h"
 
 class ConfigJsonHelper {
 public:

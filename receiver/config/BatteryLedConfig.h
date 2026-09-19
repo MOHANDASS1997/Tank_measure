@@ -8,9 +8,7 @@
 //             BATTERY & INA219 HARDWARE CONFIG
 // =====================================================
 
-#ifndef INA219_TEST_MODE
-#define INA219_TEST_MODE TEST_MODE
-#endif
+
 
 // INA219 I2C Hardware Settings (Fixed Hardware)
 #define INA219_I2C_ADDRESS 0x40

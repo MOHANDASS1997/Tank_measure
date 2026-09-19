@@ -23,8 +23,14 @@ private:
   unsigned long _lastDebounceTime;
   unsigned long _pressStartTime;
   bool _longPressHandled;
+  bool _wokeFromSleep;
+
+  // Multi-click detection for Selection Screen
+  uint8_t _clickCount;
+  unsigned long _lastClickReleaseTime;
 
   static const unsigned long DEBOUNCE_TIME = 35;
+  static const unsigned long DOUBLE_CLICK_TIME_MS = 300;
 };
 
 extern ButtonManager buttonManager;

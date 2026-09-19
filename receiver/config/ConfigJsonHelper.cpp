@@ -103,6 +103,7 @@ String ConfigJsonHelper::serializeAll() {
   const auto& sy = systemConfig.get();
   const auto& lr = loraConfigManager.get();
   const auto& tm = timeConfig.get();
+  const auto& dv = devConfig.get();
 
   String out = "{\n";
 
@@ -197,6 +198,9 @@ String ConfigJsonHelper::serializeAll() {
   out += "    \"ntpServer2\": \"" + String(tm.ntpServer2) + "\",\n";
   out += "    \"gmtOffsetSec\": " + String(tm.gmtOffsetSec) + ",\n";
   out += "    \"daylightOffsetSec\": " + String(tm.daylightOffsetSec) + "\n";
+  out += "  },\n";
+  out += "  \"dev\": {\n";
+  out += "    \"devModeEnabled\": " + String(dv.devModeEnabled ? "true" : "false") + "\n";
   out += "  }\n";
 
   out += "}";
@@ -212,6 +216,7 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
   SystemSettings sSystem = systemConfig.get();
   LoRaSettings sLoRa = loraConfigManager.get();
   TimeSettings sTime = timeConfig.get();
+  DevSettings sDev = devConfig.get();
 
   // 1. Wi-Fi
   String wifiBlock = extractSubBlock(json, "wifi", '{', '}');
@@ -342,7 +347,14 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
     sTime.daylightOffsetSec = extractLong(timeBlock, "daylightOffsetSec", sTime.daylightOffsetSec);
   }
 
-  // VALIDATION PHASE: Validate all 7 objects BEFORE saving any
+  // 8. Dev Mode
+  String devBlock = extractSubBlock(json, "dev", '{', '}');
+  if (devBlock.length() > 0) {
+    String devStr = extractString(devBlock, "devModeEnabled", sDev.devModeEnabled ? "true" : "false");
+    sDev.devModeEnabled = (devStr == "true" || devStr == "1");
+  }
+
+  // VALIDATION PHASE: Validate all 8 objects BEFORE saving any
   if (!wifiConfig.validate(sWifi, outError)) return false;
   if (!tankConfig.validate(sTank, outError)) return false;
   if (!transmitterConfig.validate(sTx, outError)) return false;
@@ -350,6 +362,7 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
   if (!systemConfig.validate(sSystem, outError)) return false;
   if (!loraConfigManager.validate(sLoRa, outError)) return false;
   if (!timeConfig.validate(sTime, outError)) return false;
+  if (!devConfig.validate(sDev, outError)) return false;
 
   // COMMIT PHASE: Atomically apply and save to NVS
   wifiConfig.set(sWifi);
@@ -373,7 +386,10 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
   timeConfig.set(sTime);
   timeConfig.save();
 
-  Serial.println("[Config] All 7 configuration objects updated and persisted successfully.");
+  devConfig.set(sDev);
+  devConfig.save();
+
+  Serial.println("[Config] All 8 configuration objects updated and persisted successfully.");
   return true;
 }
 
@@ -399,7 +415,10 @@ bool ConfigJsonHelper::resetAllToDefaults(String& outError) {
   timeConfig.loadDefaults();
   timeConfig.save();
 
-  Serial.println("[Config] All 7 configuration objects restored to factory defaults.");
+  devConfig.loadDefaults();
+  devConfig.save();
+
+  Serial.println("[Config] All 8 configuration objects restored to factory defaults.");
   return true;
 }
 
@@ -438,6 +457,11 @@ bool ConfigJsonHelper::resetSection(const String& section, String& outError) {
     timeConfig.loadDefaults();
     timeConfig.save();
     Serial.println("[Config] Time settings reset to factory defaults.");
+    return true;
+  } else if (section == "dev") {
+    devConfig.loadDefaults();
+    devConfig.save();
+    Serial.println("[Config] Dev Mode settings reset to factory defaults.");
     return true;
   } else if (section == "all" || section.length() == 0) {
     return resetAllToDefaults(outError);

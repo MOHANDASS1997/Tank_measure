@@ -9,8 +9,11 @@ DisplayManager displayManager;
 DisplayManager::DisplayManager()
   : _display(U8G2_R0, U8X8_PIN_NONE),
     _currentPage(PAGE_TANK),
-    _testMode(false),
+    _displayMode(DISPLAY_MODE_NORMAL),
+    _lastOpenedScreen(DISPLAY_MODE_NORMAL),
     _currentTestScreen(TEST_SCREEN_INA219),
+    _selectionIndex(0),
+    _selectionCount(2),
     _displayAwake(true),
     _lastUiActivityTime(0),
     _uiTimeoutMs(UI_TIMEOUT_MS),
@@ -18,6 +21,7 @@ DisplayManager::DisplayManager()
     _chargingAnimationStart(0),
     _savedPageBeforeAnimation(PAGE_TANK),
     _savedTestScreenBeforeAnimation(TEST_SCREEN_INA219),
+    _savedModeBeforeAnimation(DISPLAY_MODE_NORMAL),
     _lastChargingState(false),
     _wasConfigModeActive(false),
     _screenW(128),
@@ -1425,14 +1429,20 @@ void DisplayManager::drawCurrentScreen() {
     return;
   }
 
-  // Priority 1: Configuration Mode Screen
-  if (wifiManager.isConfigModeActive()) {
-    drawConfigScreen(wifiManager.getHostname(), wifiManager.getIP(), wifiManager.getConfigModeRemainingSeconds());
+  // Priority 1: Selection Screen (popup menu on long press)
+  if (_displayMode == DISPLAY_MODE_SELECTION) {
+    drawSelectionScreen();
     return;
   }
 
-  // Priority 2: Test Mode Screen
-  if (_testMode) {
+  // Priority 2: Configuration Mode Screen
+  if (_displayMode == DISPLAY_MODE_CONFIG || wifiManager.isConfigModeActive()) {
+    drawConfigScreen(wifiManager.getSSID(), wifiManager.getHostname(), wifiManager.getIP(), wifiManager.getConfigModeRemainingSeconds());
+    return;
+  }
+
+  // Priority 3: Dev Mode Diagnostic Screen
+  if (_displayMode == DISPLAY_MODE_DEV) {
     updateTestScreen();
     return;
   }
@@ -1522,14 +1532,15 @@ void DisplayManager::showWiFiConnected(
 
 void DisplayManager::switchPage() {
 
-  // If in config mode, do not switch normal page
-  if (wifiManager.isConfigModeActive()) {
+  // If in config mode or selection mode, do not switch normal page
+  if (_displayMode == DISPLAY_MODE_CONFIG || wifiManager.isConfigModeActive() || _displayMode == DISPLAY_MODE_SELECTION) {
     return;
   }
 
-  // If in test mode, cycle to next test screen
-  if (_testMode) {
+  // If in dev mode, cycle to next dev screen
+  if (_displayMode == DISPLAY_MODE_DEV) {
     switchTestScreen();
+    drawCurrentScreen();
     return;
   }
 
@@ -1599,6 +1610,7 @@ void DisplayManager::startChargingAnimation() {
   _chargingAnimationStart = millis();
   _savedPageBeforeAnimation = _currentPage;
   _savedTestScreenBeforeAnimation = _currentTestScreen;
+  _savedModeBeforeAnimation = _displayMode;
 
   // Turn OLED ON if it was OFF
   if (!_displayAwake) {
@@ -1656,15 +1668,201 @@ void DisplayManager::drawChargingAnimation() {
 }
 
 // =====================================================
-//                 TEST MODE CONTROLLER
+//                 DEV MODE CONTROLLER
 // =====================================================
 
-void DisplayManager::setTestMode(bool active) {
-  _testMode = active;
+void DisplayManager::setDevMode(bool active) {
+  if (active) {
+    _displayMode = DISPLAY_MODE_DEV;
+    _lastOpenedScreen = DISPLAY_MODE_DEV;
+  } else {
+    if (_displayMode == DISPLAY_MODE_DEV) {
+      _displayMode = DISPLAY_MODE_NORMAL;
+    }
+    if (_lastOpenedScreen == DISPLAY_MODE_DEV) {
+      _lastOpenedScreen = DISPLAY_MODE_NORMAL;
+    }
+  }
 }
 
-bool DisplayManager::isTestMode() const {
-  return _testMode;
+bool DisplayManager::isDevMode() const {
+  return (_displayMode == DISPLAY_MODE_DEV);
+}
+
+// =====================================================
+//              SELECTION SCREEN CONTROLLER
+// =====================================================
+
+void DisplayManager::openSelectionScreen() {
+  _selectionCount = 0;
+  _availableOptions[_selectionCount++] = SELECT_OPT_TANK;
+  _availableOptions[_selectionCount++] = SELECT_OPT_CONFIG;
+  if (devConfig.get().devModeEnabled) {
+    _availableOptions[_selectionCount++] = SELECT_OPT_DEV;
+  }
+
+  // Pre-select based on current active mode
+  if (_displayMode == DISPLAY_MODE_DEV) {
+    _selectionIndex = (_selectionCount > 2) ? 2 : 0;
+  } else if (_displayMode == DISPLAY_MODE_CONFIG || wifiManager.isConfigModeActive()) {
+    _selectionIndex = 1;
+  } else {
+    _selectionIndex = 0;
+  }
+
+  _displayMode = DISPLAY_MODE_SELECTION;
+  resetTimeout();
+  drawCurrentScreen();
+}
+
+void DisplayManager::closeSelectionScreen() {
+  if (_lastOpenedScreen == DISPLAY_MODE_DEV && !devConfig.get().devModeEnabled) {
+    _lastOpenedScreen = DISPLAY_MODE_NORMAL;
+  }
+  _displayMode = _lastOpenedScreen;
+  resetTimeout();
+  drawCurrentScreen();
+}
+
+void DisplayManager::nextSelectionItem() {
+  if (_displayMode != DISPLAY_MODE_SELECTION || _selectionCount == 0) return;
+  _selectionIndex = (_selectionIndex + 1) % _selectionCount;
+  resetTimeout();
+  drawCurrentScreen();
+}
+
+void DisplayManager::confirmSelection() {
+  if (_displayMode != DISPLAY_MODE_SELECTION || _selectionCount == 0) return;
+
+  SelectionOption chosen = _availableOptions[_selectionIndex];
+  Serial.print("[Display] Screen selection confirmed: ");
+
+  if (chosen == SELECT_OPT_TANK) {
+    Serial.println("Tank Data Screen");
+    if (wifiManager.isConfigModeActive()) {
+      wifiManager.exitConfigMode();
+    }
+    _displayMode = DISPLAY_MODE_NORMAL;
+    _lastOpenedScreen = DISPLAY_MODE_NORMAL;
+    _currentPage = PAGE_TANK;
+  } else if (chosen == SELECT_OPT_CONFIG) {
+    Serial.println("Config Screen");
+    _displayMode = DISPLAY_MODE_CONFIG;
+    if (!wifiManager.isConfigModeActive()) {
+      wifiManager.enterConfigMode();
+    }
+  } else if (chosen == SELECT_OPT_DEV) {
+    Serial.println("Dev Screen");
+    if (wifiManager.isConfigModeActive()) {
+      wifiManager.exitConfigMode();
+    }
+    _displayMode = DISPLAY_MODE_DEV;
+    _lastOpenedScreen = DISPLAY_MODE_DEV;
+  }
+
+  resetTimeout();
+  drawCurrentScreen();
+}
+
+void DisplayManager::drawSelectionScreen() {
+  _display.clearBuffer();
+
+  // 1. Header Bar (inverted black bar with white title)
+  _display.drawBox(0, 0, _screenW, 11);
+  _display.setDrawColor(0);
+  _display.setFont(u8g2_font_6x10_tr);
+  const char* title = "SELECT SCREEN";
+  int tw = _display.getStrWidth(title);
+  _display.drawStr((_screenW - tw) / 2, 9, title);
+
+  // 2. Menu Items
+  _display.setFont(u8g2_font_6x10_tr);
+
+  for (uint8_t i = 0; i < _selectionCount; i++) {
+    SelectionOption opt = _availableOptions[i];
+    const char* label = "Unknown";
+    if (opt == SELECT_OPT_TANK) label = "Tank Data Screen";
+    else if (opt == SELECT_OPT_CONFIG) label = "Config Screen";
+    else if (opt == SELECT_OPT_DEV) label = "Dev Screen";
+
+    int rowY, rowH;
+    if (_selectionCount == 2) {
+      rowH = 14;
+      rowY = 16 + (i * 18);
+    } else {
+      rowH = 12;
+      rowY = 14 + (i * 13);
+    }
+
+    if (i == _selectionIndex) {
+      // Highlighted selection box
+      _display.setDrawColor(1);
+      _display.drawRBox(2, rowY, _screenW - 4, rowH, 2);
+      _display.setDrawColor(0);
+      char itemBuf[28];
+      snprintf(itemBuf, sizeof(itemBuf), "> %s", label);
+      _display.drawStr(6, rowY + rowH - 3, itemBuf);
+    } else {
+      // Unselected item
+      _display.setDrawColor(1);
+      char itemBuf[28];
+      snprintf(itemBuf, sizeof(itemBuf), "  %s", label);
+      _display.drawStr(6, rowY + rowH - 3, itemBuf);
+    }
+  }
+
+  // 3. Footer Bar: Navigation Helper
+  _display.setDrawColor(1);
+  _display.drawHLine(0, 53, _screenW);
+  _display.setFont(u8g2_font_4x6_tr);
+  const char* footer = "1x: Move   2x: Confirm";
+  int fw = _display.getStrWidth(footer);
+  _display.drawStr((_screenW - fw) / 2, 61, footer);
+
+  _display.sendBuffer();
+}
+
+// =====================================================
+//               BUTTON ACTION HANDLERS
+// =====================================================
+
+void DisplayManager::handleShortPress() {
+  if (!_displayAwake) {
+    wakeDisplay();
+    return;
+  }
+
+  resetTimeout();
+
+  if (_displayMode == DISPLAY_MODE_SELECTION) {
+    nextSelectionItem();
+  } else if (_displayMode == DISPLAY_MODE_DEV) {
+    switchTestScreen();
+    drawCurrentScreen();
+  } else if (_displayMode == DISPLAY_MODE_CONFIG) {
+    // Config mode stays awake
+  } else {
+    // Normal mode: switch between Tank and Battery pages
+    switchPage();
+  }
+}
+
+void DisplayManager::handleLongPress() {
+  if (isChargingAnimationActive()) {
+    return;
+  }
+
+  if (!_displayAwake) {
+    wakeDisplay();
+  }
+
+  // If already in selection screen, toggle/close it back to last opened screen
+  if (_displayMode == DISPLAY_MODE_SELECTION) {
+    closeSelectionScreen();
+    return;
+  }
+
+  openSelectionScreen();
 }
 
 void DisplayManager::switchTestScreen() {
@@ -1698,9 +1896,10 @@ void DisplayManager::update() {
   if (_chargingAnimationActive) {
     if (now - _chargingAnimationStart >= CHARGING_ANIMATION_DURATION_MS) {
       _chargingAnimationActive = false;
-      // Restore previously active page
+      // Restore previously active page & mode
       _currentPage = _savedPageBeforeAnimation;
       _currentTestScreen = _savedTestScreenBeforeAnimation;
+      _displayMode = _savedModeBeforeAnimation;
       // Start fresh 15-second display timeout
       _lastUiActivityTime = millis();
       // Redraw restored page
@@ -1724,6 +1923,25 @@ void DisplayManager::update() {
     if (!_displayAwake) {
       wakeDisplay();
     }
+
+    if (!isConfig) {
+      // Configuration mode exited or timed out (auto-dismissed)
+      // Edge case: config mode auto dismiss will always point to the last opened screen.
+      // If the last opened screen is not present, fallback to tank data screens.
+      if (_lastOpenedScreen == DISPLAY_MODE_DEV) {
+        if (devConfig.get().devModeEnabled) {
+          _displayMode = DISPLAY_MODE_DEV;
+        } else {
+          _displayMode = DISPLAY_MODE_NORMAL;
+          _lastOpenedScreen = DISPLAY_MODE_NORMAL;
+        }
+      } else {
+        _displayMode = DISPLAY_MODE_NORMAL;
+      }
+    } else {
+      _displayMode = DISPLAY_MODE_CONFIG;
+    }
+
     drawCurrentScreen();
   }
 
@@ -1747,6 +1965,12 @@ void DisplayManager::update() {
   if (_displayAwake) {
     if (systemConfig.get().autoSleepEnabled && _uiTimeoutMs > 0) {
       if (now - _lastUiActivityTime >= _uiTimeoutMs) {
+        if (_displayMode == DISPLAY_MODE_SELECTION) {
+          if (_lastOpenedScreen == DISPLAY_MODE_DEV && !devConfig.get().devModeEnabled) {
+            _lastOpenedScreen = DISPLAY_MODE_NORMAL;
+          }
+          _displayMode = _lastOpenedScreen;
+        }
         sleepDisplay();
       }
     }
@@ -1758,11 +1982,11 @@ void DisplayManager::update() {
   }
 
   // 3. Screen Rendering
-  if (_testMode) {
-    // In Test Mode: update live test screen at ~30 FPS (every 33ms)
-    static unsigned long lastTestScreenUpdate = 0;
-    if (now - lastTestScreenUpdate >= 33) {
-      lastTestScreenUpdate = now;
+  if (_displayMode == DISPLAY_MODE_DEV) {
+    // In Dev Mode: update live test screen at ~30 FPS (every 33ms)
+    static unsigned long lastDevScreenUpdate = 0;
+    if (now - lastDevScreenUpdate >= 33) {
+      lastDevScreenUpdate = now;
       drawCurrentScreen();
     }
     return;
@@ -1836,9 +2060,9 @@ void DisplayManager::drawIna219TestScreen(
 
   char titleBuf[24];
   if (TEST_SCREEN_COUNT > 1) {
-    snprintf(titleBuf, sizeof(titleBuf), "INA219 [%d/%d]", (int)_currentTestScreen + 1, (int)TEST_SCREEN_COUNT);
+    snprintf(titleBuf, sizeof(titleBuf), "DEV INA219 [%d/%d]", (int)_currentTestScreen + 1, (int)TEST_SCREEN_COUNT);
   } else {
-    snprintf(titleBuf, sizeof(titleBuf), "INA219 TEST");
+    snprintf(titleBuf, sizeof(titleBuf), "DEV: INA219");
   }
   _display.drawStr(3, 9, titleBuf);
 
@@ -1901,6 +2125,7 @@ void DisplayManager::drawIna219TestScreen(
 // =====================================================
 
 void DisplayManager::drawConfigScreen(
+  const String& ssid,
   const String& url,
   const String& ip,
   unsigned long remainingSec
@@ -1918,17 +2143,17 @@ void DisplayManager::drawConfigScreen(
   // Body
   _display.setDrawColor(1);
   setSmallFont();
-  _display.drawStr(4, 21, "Open in Browser:");
+  String netLine = "Wi-Fi: " + (ssid.length() > 0 ? ssid : String("DASSHOME-Setup"));
+  _display.drawStr(2, 22, netLine.c_str());
 
-  setLabelFont();
-  _display.drawStr(4, 33, url.c_str());
+  String urlLine = "URL:   " + url;
+  _display.drawStr(2, 33, urlLine.c_str());
 
-  setSmallFont();
-  String ipLine = "IP: " + ip;
-  _display.drawStr(4, 45, ipLine.c_str());
+  String ipLine = "IP:    " + ip;
+  _display.drawStr(2, 44, ipLine.c_str());
 
   // Divider line
-  _display.drawHLine(0, 49, _screenW);
+  _display.drawHLine(0, 48, _screenW);
 
   // Footer: Countdown timer / hold button to exit
   char footBuf[32];

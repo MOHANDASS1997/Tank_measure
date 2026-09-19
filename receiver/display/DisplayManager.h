@@ -8,6 +8,8 @@
 #include "../models/DisplayData.h"
 #include "../time/TimeManager.h"
 
+#include "../config/DevConfig.h"
+
 // Forward declaration
 class BatteryLedManager;
 
@@ -21,7 +23,24 @@ enum Page {
 };
 
 // =====================================================
-//                 TEST SCREEN ENUM
+//                 DISPLAY MODE ENUM
+// =====================================================
+
+enum DisplayMode {
+  DISPLAY_MODE_NORMAL,      // Tank / Battery telemetry screens
+  DISPLAY_MODE_SELECTION,   // Selection Menu (Tank Data, Config, Dev)
+  DISPLAY_MODE_CONFIG,      // Config Mode screen
+  DISPLAY_MODE_DEV          // Dev diagnostic screens (e.g. INA219)
+};
+
+enum SelectionOption {
+  SELECT_OPT_TANK = 0,
+  SELECT_OPT_CONFIG = 1,
+  SELECT_OPT_DEV = 2
+};
+
+// =====================================================
+//                 TEST / DEV SCREEN ENUM
 // =====================================================
 // To add a new test screen in the future:
 // 1. Add an enum value before TEST_SCREEN_COUNT
@@ -49,13 +68,30 @@ public:
   void showNotConnected();
   void switchPage();
 
-  // Test Mode management
-  void setTestMode(bool active);
-  bool isTestMode() const;
+  // Selection Screen & Navigation
+  DisplayMode getDisplayMode() const { return _displayMode; }
+  bool isSelectionScreenActive() const { return _displayMode == DISPLAY_MODE_SELECTION; }
+  void openSelectionScreen();
+  void closeSelectionScreen();
+  void nextSelectionItem();
+  void confirmSelection();
+  void drawSelectionScreen();
+
+  // Button Action Handlers
+  void handleShortPress();
+  void handleLongPress();
+
+  // Dev / Diagnostic Mode management
+  void setDevMode(bool active);
+  bool isDevMode() const;
   void switchTestScreen();
   TestScreen getCurrentTestScreen() const;
   void updateTestScreen();
   void updateTestScreen(const BatteryLedManager& batteryLed);
+
+  // Backward compatibility alias for test mode
+  void setTestMode(bool active) { setDevMode(active); }
+  bool isTestMode() const { return isDevMode(); }
 
   // UI Timeout & Power Saving
   bool isAwake() const;
@@ -77,7 +113,7 @@ public:
   void drawWiFiConnectedScreen(const String& ssid, const String& ip);
   void showWiFiNudge(const String& ssid, const String& ip, const char* statusMsg = "Open IP in browser");
   void showWiFiConnected(const String& ssid, const String& ip);
-  void drawConfigScreen(const String& url, const String& ip, unsigned long remainingSec);
+  void drawConfigScreen(const String& ssid, const String& url, const String& ip, unsigned long remainingSec);
 
   void drawIna219TestScreen(const BatteryLedManager& batteryLed);
   void drawIna219TestScreen(
@@ -101,8 +137,14 @@ private:
 
   DisplayData _displayData;
   Page _currentPage;
-  bool _testMode;
+  DisplayMode _displayMode;
+  DisplayMode _lastOpenedScreen;
   TestScreen _currentTestScreen;
+
+  // Selection Screen state
+  uint8_t _selectionIndex;
+  uint8_t _selectionCount;
+  SelectionOption _availableOptions[3];
 
   // Power save and UI timeout
   bool _displayAwake;
@@ -114,6 +156,7 @@ private:
   unsigned long _chargingAnimationStart;
   Page _savedPageBeforeAnimation;
   TestScreen _savedTestScreenBeforeAnimation;
+  DisplayMode _savedModeBeforeAnimation;
   bool _lastChargingState;
   bool _wasConfigModeActive;
 

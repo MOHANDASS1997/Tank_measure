@@ -59,6 +59,8 @@ private:
   WebServer _server;
   DNSServer _dnsServer;
   bool _mdnsStarted;
+  bool _serverRoutesConfigured;
+  bool _serverRunning;
 
   void applyPowerState();
   void startSTAConnection();

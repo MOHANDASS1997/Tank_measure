@@ -99,6 +99,7 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     <button class="tab-btn" onclick="showTab(4)">🖥️ System & UI</button>
     <button class="tab-btn" onclick="showTab(5)">📻 LoRa Radio</button>
     <button class="tab-btn" onclick="showTab(6)">⏰ Time & NTP</button>
+    <button class="tab-btn" onclick="showTab(7)">🛠️ Dev Mode</button>
   </div>
 
   <!-- PANEL 0: WI-FI -->
@@ -368,6 +369,26 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     </div>
   </div>
 
+  <!-- PANEL 7: DEV MODE -->
+  <div class="panel" id="p7">
+    <div class="panel-title">Developer & Diagnostic Mode</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <input type="checkbox" id="dev_mode_enabled" style="width:20px;height:20px;cursor:pointer;" onchange="markDirty(this)">
+        <div>
+          <label for="dev_mode_enabled" style="font-size:14px;color:var(--text);font-weight:600;cursor:pointer;">Enable Dev Mode Entry Point</label>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">
+            When enabled, adds the Dev diagnostic screen to the on-device selection menu (shown on button long press).
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('dev')">🔄 Reset Dev Mode</button>
+      <button class="btn-main" onclick="saveSection('Dev Mode')">💾 Save Dev Mode</button>
+    </div>
+  </div>
+
   <!-- STICKY ACTION BAR -->
   <div class="actions">
     <div class="left-actions">
@@ -530,6 +551,10 @@ function populateForm(d){
     document.getElementById('time_ntp2').value = d.time.ntpServer2 || '';
     document.getElementById('time_gmt').value = d.time.gmtOffsetSec;
     document.getElementById('time_daylight').value = d.time.daylightOffsetSec;
+  }
+  // Dev Mode
+  if(d.dev){
+    document.getElementById('dev_mode_enabled').checked = (d.dev.devModeEnabled === true || d.dev.devModeEnabled === 1);
   }
 }
 
@@ -698,6 +723,9 @@ function collectData(){
       ntpServer2: document.getElementById('time_ntp2').value.trim(),
       gmtOffsetSec: parseInt(document.getElementById('time_gmt').value),
       daylightOffsetSec: parseInt(document.getElementById('time_daylight').value)
+    },
+    dev: {
+      devModeEnabled: document.getElementById('dev_mode_enabled').checked
     }
   };
 
@@ -783,7 +811,7 @@ function saveSection(name){
 function confirmResetSection(sec){
   const title = (sec === 'all') ? 'Reset All Settings?' : `Reset ${sec.toUpperCase()}?`;
   const msg = (sec === 'all') 
-    ? 'Are you sure you want to restore all 7 configuration objects to firmware factory defaults? Unsaved changes will be lost.' 
+    ? 'Are you sure you want to restore all 8 configuration objects to firmware factory defaults? Unsaved changes will be lost.' 
     : `Are you sure you want to reset ${sec.toUpperCase()} to firmware factory defaults?`;
 
   showModal(title, msg, ()=>{

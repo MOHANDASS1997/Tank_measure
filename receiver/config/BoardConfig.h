@@ -25,12 +25,11 @@
 #define MOCK_DATA_INTERVAL_MS 60000 // Periodic interval (1 minute)
 
 // =====================================================
-//                     TEST MODE
+//                     DEV MODE
 // =====================================================
-// Set to true to activate Test Mode with diagnostic screens.
-// In Test Mode, only test screens are displayed and can be navigated
-// using the page navigation button. Set to false for normal operation.
-#define TEST_MODE false
+// Dev Mode is now managed persistently via DevConfig and the Web UI.
+// The entry point can be toggled in the Web UI (Dev Mode tab).
+
 // =====================================================
 //             DISPLAY & UI TIMEOUT CONFIG
 // =====================================================

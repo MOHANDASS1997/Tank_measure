@@ -8,6 +8,7 @@
 #include "config/TransmitterConfig.h"
 #include "config/WiFiConfig.h"
 #include "config/TimeConfig.h"
+#include "config/DevConfig.h"
 #include "config/BatteryLedConfig.h"
 #include "config/ConfigJsonHelper.h"
 
@@ -33,6 +34,7 @@
 #include "config/BatteryLedConfig.cpp"
 #include "config/LoRaConfig.cpp"
 #include "config/TimeConfig.cpp"
+#include "config/DevConfig.cpp"
 #include "config/ConfigJsonHelper.cpp"
 
 #include "protocol/PacketParser.cpp"
@@ -63,7 +65,7 @@ void setup() {
   Serial.println("TankSync ESP32 Receiver");
   Serial.println("================================");
 
-  // Initialize 7 distinct persistent configuration objects
+  // Initialize 8 distinct persistent configuration objects
   systemConfig.begin();
   wifiConfig.begin();
   tankConfig.begin();
@@ -71,6 +73,7 @@ void setup() {
   batteryConfig.begin();
   loraConfigManager.begin();
   timeConfig.begin();
+  devConfig.begin();
 
   // Initialize display
   displayManager.begin();
@@ -78,23 +81,11 @@ void setup() {
   // Initialize battery LED indicator & INA219 monitor
   batteryLedManager.begin();
 
-  // Initialize button input (for normal navigation & long-press config mode)
+  // Initialize button input (for normal navigation & long-press selection menu)
   buttonManager.begin();
 
   // Initialize Wi-Fi lifecycle (OFF by default, ready for config mode & packet sync)
   wifiManager.begin();
-
-#if TEST_MODE
-  displayManager.setTestMode(true);
-  Serial.println();
-  Serial.println("================================");
-  Serial.println("TEST MODE: ACTIVE");
-  Serial.println("Displaying diagnostic test screens only.");
-  Serial.println("Press button on GPIO 27 to cycle test screens.");
-  Serial.println("Long press (2s) opens Configuration Mode.");
-  Serial.println("================================");
-  return;
-#endif
 
   // =====================================================
   // STEP 2: RESTORE TELEMETRY FROM PERSISTENT STORAGE
@@ -146,13 +137,8 @@ void loop() {
   // Update Wi-Fi lifecycle manager (handles web server clients, captive portal & transient timestamp sync)
   wifiManager.update();
 
-  // Unified display update (handles config mode screen, test screens, normal screens, animations & timeouts)
+  // Unified display update (handles config mode screen, selection menu, dev screens, normal screens, animations & timeouts)
   displayManager.update();
-
-#if TEST_MODE
-  delay(2);
-  return;
-#endif
 
   // Check for incoming packet (LoRa or Mock Data Layer)
   RawTelemetry raw;
