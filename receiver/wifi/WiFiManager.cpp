@@ -292,15 +292,8 @@ unsigned long WiFiManager::getConfigModeRemainingSeconds() const {
 
 void WiFiManager::handleRoot() {
   _configModeStartTime = millis(); // Reset inactivity timer on UI interactions
-  _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  _server.send(200, "text/html", "");
-  size_t total = strlen_P(WEB_PORTAL_HTML);
-  for (size_t offset = 0; offset < total; offset += 1024) {
-    size_t chunk = min((size_t)1024, total - offset);
-    _server.sendContent_P(WEB_PORTAL_HTML + offset, chunk);
-    yield();
-  }
-  _server.sendContent(""); // Terminating chunk
+  _server.sendHeader("Content-Encoding", "gzip");
+  _server.send_P(200, "text/html", (const char*)WEB_PORTAL_HTML_GZ, sizeof(WEB_PORTAL_HTML_GZ));
 }
 
 void WiFiManager::handleGetConfig() {

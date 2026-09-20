@@ -66,23 +66,31 @@ The receiver:
 
 The current receiver implementation supports:
 
-* ESP32
-* RYLR998 LoRa module
-* SH1106 128×64 OLED
-* Wi-Fi status check, captive setup portal, and IP display
-* Tank level calculation
-* Battery voltage and percentage
-* Charging status
-* RSSI
-* SNR
-* Tank/transmitter configuration tables
-* Versioned DASS HOME application packets
-* Packet validation
-* OLED tank screen
-* OLED battery screen
-* Button-based screen switching
-* Animated level transitions
-* LoRa connection timeout handling
+* **Hardware & RF**:
+  * ESP32 microcontroller
+  * RYLR998 LoRa transceiver via HardwareSerial UART
+  * 1.3" SH1106 128×64 I2C OLED display (U8g2)
+  * INA219 I2C high-side voltage, current, and power sensor
+  * 5-LED hardware fuel gauge with charging animations
+  * Single multi-function button (wake, page cycle, section selection)
+* **Telemetry & Storage**:
+  * Versioned DASS HOME application packet validation (`TS|v=1|...`)
+  * Dynamic tank level and volume calculations
+  * Transmitter battery voltage and percentage calculation
+  * Persistent NVS telemetry caching across reboots
+  * RSSI and SNR signal quality tracking
+  * Optional mock data generator for testing without LoRa hardware
+* **Time & UI**:
+  * NTP time synchronization with configurable servers and timezone offsets
+  * Dynamic multi-section OLED UI (Tank, Transmitter Battery, Config, Dev Mode)
+  * Live elapsed time footer ("updated Xm ago")
+  * Inactivity auto-sleep (configurable timeout) and instant button wake
+  * Charging detection splash screen and animated hourglass waiting screen
+* **Persistent Web Configuration**:
+  * 9 NVS configuration managers built on `BaseConfigManager`
+  * Standalone SoftAP setup portal (`DASSHOME-Setup`) and station mode mDNS (`dasshome.local`)
+  * Gzip-compressed embedded Web UI (~77% flash savings)
+  * REST API for live JSON configuration inspection, partial saves, and factory resets
 
 The transmitter is being developed alongside the receiver with low-power operation and deep-sleep operation as a major design goal.
 
@@ -94,10 +102,10 @@ The transmitter is being developed alongside the receiver with low-power operati
 DASS HOME/
 │
 ├── transmitter/
-│   └── Transmitter firmware
+│   └── Transmitter firmware (ESP32-C3 Supermini)
 │
 ├── receiver/
-│   └── Receiver firmware
+│   └── Receiver firmware (ESP32)
 │
 ├── docs/
 │   ├── architecture.md
@@ -114,83 +122,88 @@ The transmitter and receiver are intentionally kept in the same repository becau
 
 # Firmware Architecture
 
-Both firmware projects are organized into independent modules rather than keeping the entire application in a single Arduino `.ino` file.
+Both firmware projects are organized into modular components.
 
-## Receiver
+## Receiver Structure
 
 ```text
 receiver/
 │
-├── receiver.ino
+├── receiver.ino                         # Main setup() and loop() coordinator
 │
-├── config/
-│   ├── BoardConfig.h
-│   ├── LoRaConfig.h
-│   ├── PacketConfig.h
-│   ├── TankConfig.h
-│   └── WiFiConfig.h
+├── config/                              # Persistent Configuration & Hardware Pins
+│   ├── BaseConfigManager.h              # CRTP base class for NVS persistence & validation
+│   ├── BoardConfig.h                    # GPIO pin definitions & hardware constants
+│   ├── BatteryLedConfig.h / .cpp        # Battery thresholds, INA219 & 5-LED configuration
+│   ├── ConfigJsonHelper.h / .cpp        # REST API JSON serialization & bulk resets
+│   ├── DevConfig.h / .cpp               # Developer mode entry toggle
+│   ├── DisplayConfig.h                  # Screen sections & page definitions
+│   ├── DisplayLayoutConfig.h / .cpp     # Section/page layout & visibility configuration
+│   ├── LoRaConfig.h / .cpp              # LoRa frequency, network ID, address, SF, BW
+│   ├── PacketConfig.h                   # DASS HOME packet validation rules
+│   ├── SystemConfig.h / .cpp            # UI timeouts, long press duration, auto-sleep
+│   ├── TankConfig.h / .cpp              # Tank geometry, capacity & distance calibration
+│   ├── TimeConfig.h / .cpp              # NTP servers & GMT timezone offset
+│   ├── TransmitterConfig.h / .cpp       # Transmitter-to-tank mapping & sensor limits
+│   └── WiFiConfig.h / .cpp              # Wi-Fi credentials & connection timeouts
 │
-├── models/
-│   ├── Telemetry.h
-│   └── DisplayData.h
+├── models/                              # Data Structures
+│   ├── DisplayData.h                    # Normalized telemetry data consumed by UI
+│   └── Telemetry.h                      # Parsed packet models
 │
-├── lora/
-│   ├── LoRaManager.h
-│   └── LoRaManager.cpp
+├── protocol/                            # Protocol Decoding
+│   ├── PacketParser.h / .cpp            # DASS HOME key-value payload parser
 │
-├── wifi/
-│   ├── WiFiManager.h
-│   └── WiFiManager.cpp
+├── lora/                                # LoRa Transport
+│   ├── LoRaManager.h / .cpp             # RYLR998 AT command parser & packet receiver
 │
-├── protocol/
-│   ├── PacketParser.h
-│   └── PacketParser.cpp
+├── tank/                                # Domain Logic
+│   ├── TankProcessor.h / .cpp           # Calibration math (percentage, volume, battery)
 │
-├── tank/
-│   ├── TankProcessor.h
-│   └── TankProcessor.cpp
+├── display/                             # OLED User Interface
+│   ├── DisplayManager.h / .cpp          # SH1106 U8g2 driver, screens, animations & sleep
 │
-├── display/
-│   ├── DisplayManager.h
-│   └── DisplayManager.cpp
+├── battery/                             # Fuel Gauge & Power Monitor
+│   ├── BatteryLedManager.h / .cpp       # 5-LED fuel gauge controller & charging state
+│   └── INA219Driver.h                   # Hardware INA219 I2C current/voltage driver
 │
-└── input/
-    ├── ButtonManager.h
-    └── ButtonManager.cpp
+├── input/                               # User Input
+│   ├── ButtonManager.h / .cpp           # Debouncing, short-press, long-press, selection
+│
+├── time/                                # Network Time
+│   ├── TimeManager.h / .cpp             # NTP sync & relative elapsed time formatting
+│
+├── storage/                             # Data Persistence
+│   ├── StorageManager.h / .cpp          # Telemetry state caching in ESP32 NVS
+│
+├── mock/                                # Testing
+│   ├── MockDataManager.h / .cpp        # Simulated telemetry generator for offline testing
+│
+└── wifi/                                # Connectivity & Web Portal
+    ├── WiFiManager.h / .cpp             # SoftAP, Station connection, DNS & WebServer
+    ├── web_portal.html                  # Editable source HTML/CSS/JS for Config Portal
+    ├── generate_portal_gz.py            # Script to compress web_portal.html into C++ header
+    └── WebPortalHtml.h                  # Gzipped PROGMEM payload served by WebServer
 ```
 
-The main `.ino` file acts primarily as the application coordinator.
+### Module Responsibilities
 
-The major responsibilities are separated into:
-
-```text
-WiFiManager
-    ↓
-LoRaManager
-    ↓
-PacketParser
-    ↓
-TankProcessor
-    ↓
-DisplayManager
-```
-
-This makes changes localized.
-
-For example:
-
-| Change                         | File                         |
-| ------------------------------ | ---------------------------- |
-| ESP32 GPIO                     | `config/BoardConfig.h`       |
-| LoRa settings                  | `config/LoRaConfig.h`        |
-| Packet requirements            | `config/PacketConfig.h`      |
-| Tank/transmitter configuration | `config/TankConfig.h`        |
-| Wi-Fi settings & timeouts      | `config/WiFiConfig.h`        |
-| Wi-Fi setup & portal           | `wifi/WiFiManager.cpp`       |
-| Packet format                  | `protocol/PacketParser.cpp`  |
-| Tank calculations              | `tank/TankProcessor.cpp`     |
-| OLED layout                    | `display/DisplayManager.cpp` |
-| Button behavior                | `input/ButtonManager.cpp`    |
+| Responsibility | Component Files |
+|---|---|
+| **GPIO & Pinouts** | `config/BoardConfig.h` |
+| **NVS Persistent Settings** | `config/BaseConfigManager.h`, `config/*Config.h` |
+| **Portal REST API & Serialization** | `config/ConfigJsonHelper.cpp` |
+| **Web Portal HTML & Compression** | `wifi/web_portal.html`, `wifi/generate_portal_gz.py`, `wifi/WebPortalHtml.h` |
+| **Wi-Fi, AP & Captive Portal** | `wifi/WiFiManager.cpp` |
+| **LoRa UART & AT Handling** | `lora/LoRaManager.cpp` |
+| **Telemetry Parsing** | `protocol/PacketParser.cpp` |
+| **Tank & Battery Calculations** | `tank/TankProcessor.cpp` |
+| **OLED Screens & Navigation** | `display/DisplayManager.cpp` |
+| **INA219 & 5-LED Fuel Gauge** | `battery/BatteryLedManager.cpp`, `battery/INA219Driver.h` |
+| **Button Clicks & Gestures** | `input/ButtonManager.cpp` |
+| **NTP & Elapsed Time** | `time/TimeManager.cpp` |
+| **Telemetry NVS Cache** | `storage/StorageManager.cpp` |
+| **Mock Telemetry Layer** | `mock/MockDataManager.cpp` |
 
 ---
 
@@ -283,17 +296,22 @@ This allows multiple tanks and transmitters with different physical characterist
 
 ## Receiver
 
-The current receiver uses:
+The receiver operates on standard 3.3V ESP32 hardware:
 
-* ESP32
-* RYLR998 LoRa module
-* 1.3" SH1106 128×64 monochrome OLED
-* Push button
+| Component | Interface / Pins | Details |
+|---|---|---|
+| **MCU** | ESP32-WROOM-32 | Dual-core 240 MHz, 4 MB Flash |
+| **OLED Display** | I2C (SDA: `21`, SCL: `22`) | 1.3" SH1106 128×64 monochrome OLED |
+| **Current / Voltage Sensor** | I2C (SDA: `21`, SCL: `22`) | INA219 High-Side DC Monitor (I2C addr `0x40`) |
+| **Battery Fuel Gauge** | GPIO `13`, `14`, `25`, `26`, `32` | 5-LED active-HIGH indicators with EMA filter |
+| **LoRa Transceiver** | UART2 (RX: `16`, TX: `17`) | Reyax RYLR998 (115200 baud default) |
+| **User Button** | GPIO `27` | Active-LOW with internal pullup |
 
-Current receiver GPIO configuration is maintained in:
+Pin assignments and timeouts can be reviewed in:
 
 ```text
 receiver/config/BoardConfig.h
+receiver/config/BatteryLedConfig.h
 ```
 
 ## Transmitter
@@ -314,18 +332,14 @@ for the current wiring and hardware information.
 
 # Software Requirements
 
-The firmware is intended to be built using the Arduino ecosystem for ESP32.
+The firmware is built using the standard Arduino ecosystem for ESP32.
 
-Required libraries for the current receiver include:
+Required libraries for the receiver:
 
-* ESP32 Arduino core
-* U8g2
-* Wire
-* WiFi, WebServer, DNSServer, Preferences (Built-in to ESP32 Core)
-
-The LoRa module communicates with the ESP32 through UART.
-
-Install the required libraries through the Arduino IDE before compiling.
+* **ESP32 Arduino Core** (v2.x or v3.x)
+* **U8g2** (by Oliver Kraus — installable via Arduino Library Manager)
+* **Wire** (Built-in)
+* **WiFi**, **WebServer**, **DNSServer**, **Preferences**, **ESPmDNS** (Built-in to ESP32 Core)
 
 ---
 
@@ -333,43 +347,44 @@ Install the required libraries through the Arduino IDE before compiling.
 
 ## Receiver
 
-Open:
-
-```text
-receiver/receiver.ino
-```
-
-in the Arduino IDE.
-
-Select the appropriate ESP32 board and serial port, then compile and upload.
+1. Open `receiver/receiver.ino` in the Arduino IDE.
+2. Select **ESP32 Dev Module** (or your specific ESP32 board).
+3. Ensure the **U8g2** library is installed in your Arduino IDE libraries.
+4. Compile and upload to your ESP32 board.
 
 ## Transmitter
 
-Open:
-
-```text
-transmitter/transmitter.ino
-```
-
-and compile/upload using the appropriate ESP32 board configuration.
+1. Open `transmitter/transmitter.ino`.
+2. Select your transmitter board (e.g., **ESP32C3 Dev Module**).
+3. Compile and upload.
 
 ---
 
-# Configuration
+# Persistent Configuration & Web Portal
 
-Hardware and application configuration is intentionally kept separate from application logic.
+The receiver features 9 persistent configuration managers backed by ESP32 non-volatile storage (NVS) using a type-safe `BaseConfigManager` architecture.
 
-Before deploying a receiver, review:
+### Configuration Modules
 
-```text
-receiver/config/BoardConfig.h
-receiver/config/LoRaConfig.h
-receiver/config/PacketConfig.h
-receiver/config/TankConfig.h
-receiver/config/WiFiConfig.h
-```
+1. **System Config** (`cfg_system`): UI sleep timeout, config mode timeout, long-press duration, charging animation splash time.
+2. **Wi-Fi Config** (`cfg_wifi`): Home Wi-Fi credentials, connection timeout, legacy migration support.
+3. **Tank Config** (`cfg_tank`): Up to 4 tanks; total height, total capacity, FULL calibration distance, EMPTY calibration distance.
+4. **Transmitter Config** (`cfg_tx`): Up to 4 transmitters; LoRa address mapping, tank association, sensor min/max range, battery voltage range.
+5. **Battery & LED Config** (`cfg_battery`): INA219 current thresholds (charging vs. discharging), voltage-to-percent curve table, 5-LED thresholds.
+6. **LoRa Config** (`cfg_lora`): RF carrier frequency (default 867 MHz), network ID, node address, spreading factor, bandwidth, coding rate.
+7. **Time Config** (`cfg_time`): Primary and secondary NTP servers, GMT timezone offset in seconds, daylight savings offset.
+8. **Dev Config** (`cfg_dev`): Toggle to enable/disable the INA219 real-time diagnostic screen.
+9. **Display Layout Config** (`cfg_dlayout`): Enable/disable individual display sections and pages.
 
-For example, adding another transmitter should primarily require updating the transmitter configuration table rather than changing the processing logic.
+### Web Configuration Portal
+
+When in Config Mode (triggered on first boot or by double-clicking/long-pressing the button):
+- **Access via SoftAP**: Connect to Wi-Fi network `DASSHOME-Setup` (no password), open your browser to `http://192.168.4.1` (captive portal redirects automatically).
+- **Access via Local Network**: When connected to home Wi-Fi, open `http://dasshome.local` in any browser on the same network.
+- **Gzip Asset Delivery**: The portal HTML/CSS/JS is pre-compressed with gzip (~10.5 KB transfer vs ~47 KB uncompressed), minimizing flash usage and loading in under a second over SoftAP.
+- **Editing the Web Portal**:
+  1. Edit the clean source HTML at `receiver/wifi/web_portal.html`.
+  2. Run `python3 receiver/wifi/generate_portal_gz.py` to regenerate `receiver/wifi/WebPortalHtml.h`.
 
 ---
 
