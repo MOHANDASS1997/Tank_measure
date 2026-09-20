@@ -16,59 +16,6 @@ void SystemConfigManager::loadDefaults() {
   _settings.autoSleepEnabled = true;
 }
 
-void SystemConfigManager::begin() {
-  if (!load()) {
-    Serial.println("[SystemConfig] No valid stored configuration found. Writing defaults.");
-    loadDefaults();
-    save();
-  } else {
-    Serial.println("[SystemConfig] Loaded persistent configuration successfully.");
-  }
-}
-
-bool SystemConfigManager::load() {
-  _prefs.begin("cfg_system", true);
-  size_t len = _prefs.getBytesLength("settings");
-  if (len != sizeof(SystemSettings)) {
-    _prefs.end();
-    return false;
-  }
-
-  SystemSettings temp;
-  _prefs.getBytes("settings", &temp, sizeof(SystemSettings));
-  _prefs.end();
-
-  if (temp.schemaVersion != CURRENT_SCHEMA_VERSION) {
-    Serial.println("[SystemConfig] Schema version mismatch; migrating to defaults.");
-    return false;
-  }
-
-  String err;
-  if (!validate(temp, err)) {
-    Serial.print("[SystemConfig] Validation failed: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _settings = temp;
-  return true;
-}
-
-bool SystemConfigManager::save() {
-  String err;
-  if (!validate(_settings, err)) {
-    Serial.print("[SystemConfig] Cannot save invalid settings: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _prefs.begin("cfg_system", false);
-  size_t written = _prefs.putBytes("settings", &_settings, sizeof(SystemSettings));
-  _prefs.end();
-
-  return (written == sizeof(SystemSettings));
-}
-
 bool SystemConfigManager::validate(const SystemSettings& s, String& err) {
   if (s.autoSleepEnabled) {
     if (s.uiTimeoutMs < 2000 || s.uiTimeoutMs > 120000) {

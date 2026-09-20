@@ -18,59 +18,6 @@ void LoRaConfigManager::loadDefaults() {
   _settings.baudRate = 115200;
 }
 
-void LoRaConfigManager::begin() {
-  if (!load()) {
-    Serial.println("[LoRaConfig] No valid stored configuration found. Writing defaults.");
-    loadDefaults();
-    save();
-  } else {
-    Serial.println("[LoRaConfig] Loaded persistent configuration successfully.");
-  }
-}
-
-bool LoRaConfigManager::load() {
-  _prefs.begin("cfg_lora", true);
-  size_t len = _prefs.getBytesLength("settings");
-  if (len != sizeof(LoRaSettings)) {
-    _prefs.end();
-    return false;
-  }
-
-  LoRaSettings temp;
-  _prefs.getBytes("settings", &temp, sizeof(LoRaSettings));
-  _prefs.end();
-
-  if (temp.schemaVersion != CURRENT_SCHEMA_VERSION) {
-    Serial.println("[LoRaConfig] Schema version mismatch; loading defaults.");
-    return false;
-  }
-
-  String err;
-  if (!validate(temp, err)) {
-    Serial.print("[LoRaConfig] Validation failed: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _settings = temp;
-  return true;
-}
-
-bool LoRaConfigManager::save() {
-  String err;
-  if (!validate(_settings, err)) {
-    Serial.print("[LoRaConfig] Cannot save invalid settings: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _prefs.begin("cfg_lora", false);
-  size_t written = _prefs.putBytes("settings", &_settings, sizeof(LoRaSettings));
-  _prefs.end();
-
-  return (written == sizeof(LoRaSettings));
-}
-
 bool LoRaConfigManager::validate(const LoRaSettings& s, String& err) {
   if (s.band < 137000000UL || s.band > 1020000000UL) {
     err = "LoRa frequency band must be valid (137-1020 MHz)";

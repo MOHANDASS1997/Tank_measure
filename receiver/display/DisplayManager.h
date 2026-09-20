@@ -217,6 +217,7 @@ private:
   unsigned long _lastFooterUpdate;
 
   void drawWaitingAnimation(int centerX, int centerY);
+  void _resetDisplayState();
 };
 
 extern DisplayManager displayManager;

@@ -16,59 +16,6 @@ void TimeConfigManager::loadDefaults() {
   _settings.daylightOffsetSec = DEFAULT_DAYLIGHT_OFFSET_SEC;
 }
 
-void TimeConfigManager::begin() {
-  if (!load()) {
-    Serial.println("[TimeConfig] No valid stored configuration found. Writing defaults.");
-    loadDefaults();
-    save();
-  } else {
-    Serial.println("[TimeConfig] Loaded persistent configuration successfully.");
-  }
-}
-
-bool TimeConfigManager::load() {
-  _prefs.begin("cfg_time", true);
-  size_t len = _prefs.getBytesLength("settings");
-  if (len != sizeof(TimeSettings)) {
-    _prefs.end();
-    return false;
-  }
-
-  TimeSettings temp;
-  _prefs.getBytes("settings", &temp, sizeof(TimeSettings));
-  _prefs.end();
-
-  if (temp.schemaVersion != CURRENT_SCHEMA_VERSION) {
-    Serial.println("[TimeConfig] Schema version mismatch; loading defaults.");
-    return false;
-  }
-
-  String err;
-  if (!validate(temp, err)) {
-    Serial.print("[TimeConfig] Validation failed: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _settings = temp;
-  return true;
-}
-
-bool TimeConfigManager::save() {
-  String err;
-  if (!validate(_settings, err)) {
-    Serial.print("[TimeConfig] Cannot save invalid settings: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _prefs.begin("cfg_time", false);
-  size_t written = _prefs.putBytes("settings", &_settings, sizeof(TimeSettings));
-  _prefs.end();
-
-  return (written == sizeof(TimeSettings));
-}
-
 bool TimeConfigManager::validate(const TimeSettings& s, String& err) {
   if (strlen(s.ntpServer1) == 0) {
     err = "Primary NTP Server cannot be empty";

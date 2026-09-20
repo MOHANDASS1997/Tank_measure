@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include "BaseConfigManager.h"
 
 // =====================================================
 //                  TANK CONFIGURATION
@@ -23,20 +24,16 @@ struct TankSettings {
   TankConfig tanks[MAX_TANKS];
 };
 
-class TankConfigManager {
+class TankConfigManager : public BaseConfigManager<TankConfigManager, TankSettings> {
 public:
   static const uint16_t CURRENT_SCHEMA_VERSION = 1;
+  static const char* getNvsNamespace() { return "cfg_tank"; }
+  static const char* getTag() { return "TankConfig"; }
 
   TankConfigManager();
 
-  void begin();
   void loadDefaults();
-  bool load();
-  bool save();
   bool validate(const TankSettings& settings, String& err);
-
-  const TankSettings& get() const { return _settings; }
-  void set(const TankSettings& settings) { _settings = settings; }
 
   bool findTank(const char* tankId, TankConfig& result) const;
   uint8_t getCount() const { return _settings.count; }
@@ -45,10 +42,6 @@ public:
   bool addTank(const TankConfig& tank);
   bool updateTank(uint8_t index, const TankConfig& tank);
   bool removeTank(uint8_t index);
-
-private:
-  TankSettings _settings;
-  Preferences _prefs;
 };
 
 extern TankConfigManager tankConfig;

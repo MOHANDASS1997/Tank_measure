@@ -68,45 +68,18 @@ DisplayManager::DisplayManager()
 // =====================================================
 
 void DisplayManager::begin() {
-
-  Wire.begin(
-    OLED_SDA,
-    OLED_SCL
-  );
-
-  Wire.setClock(
-    400000
-  );
-
+  Wire.begin(OLED_SDA, OLED_SCL);
+  Wire.setClock(400000);
   _display.begin();
 
-  _screenW =
-    _display.getDisplayWidth();
+  _screenW = _display.getDisplayWidth();
+  _screenH = _display.getDisplayHeight();
+  _minDim = min(_screenW, _screenH);
 
-  _screenH =
-    _display.getDisplayHeight();
-
-  _minDim =
-    min(
-      _screenW,
-      _screenH
-    );
-
-  Serial.print(
-    "OLED: "
-  );
-
-  Serial.print(
-    _screenW
-  );
-
-  Serial.print(
-    " x "
-  );
-
-  Serial.println(
-    _screenH
-  );
+  Serial.print("OLED: ");
+  Serial.print(_screenW);
+  Serial.print(" x ");
+  Serial.println(_screenH);
 
   _lastUiActivityTime = millis();
   _lastChargingState = batteryLedManager.isCharging();
@@ -118,225 +91,87 @@ void DisplayManager::begin() {
 // =====================================================
 
 void DisplayManager::setSmallFont() {
-
-  _display.setFont(
-    u8g2_font_5x8_tr
-  );
+  _display.setFont(u8g2_font_5x8_tr);
 }
 
 void DisplayManager::setLabelFont() {
-
-  _display.setFont(
-    u8g2_font_6x10_tr
-  );
+  _display.setFont(u8g2_font_6x10_tr);
 }
 
 void DisplayManager::setLargeFont() {
-
-  _display.setFont(
-    u8g2_font_logisoso24_tn
-  );
+  _display.setFont(u8g2_font_logisoso24_tn);
 }
 
 // =====================================================
 // Text helper
 // =====================================================
 
-void DisplayManager::drawTextTop(
-  int x,
-  int top,
-  const char* text
-) {
-
-  int baseline =
-    top +
-    _display.getAscent();
-
-  _display.drawStr(
-    x,
-    baseline,
-    text
-  );
+void DisplayManager::drawTextTop(int x, int top, const char* text) {
+  int baseline = top + _display.getAscent();
+  _display.drawStr(x, baseline, text);
 }
 
 // =====================================================
 //                 LARGE PERCENTAGE
 // =====================================================
 
-void DisplayManager::drawLargePercentage(
-  int value,
-  int x,
-  int y
-) {
-
+void DisplayManager::drawLargePercentage(int value, int x, int y) {
   setLargeFont();
 
-  String number =
-    String(
-      constrain(
-        value,
-        0,
-        100
-      )
-    );
+  String number = String(constrain(value, 0, 100));
+  int numberAscent = _display.getAscent();
+  int numberDescent = _display.getDescent();
+  int numberHeight = numberAscent - numberDescent;
 
-  int numberAscent =
-    _display.getAscent();
+  _display.drawStr(x, y + numberAscent, number.c_str());
 
-  int numberDescent =
-    _display.getDescent();
-
-  int numberHeight =
-    numberAscent -
-    numberDescent;
-
-  _display.drawStr(
-    x,
-    y + numberAscent,
-    number.c_str()
-  );
-
-  int numberWidth =
-    _display.getStrWidth(
-      number.c_str()
-    );
+  int numberWidth = _display.getStrWidth(number.c_str());
 
   // Numeric font doesn't contain %
-  _display.setFont(
-    u8g2_font_10x20_tr
-  );
+  _display.setFont(u8g2_font_10x20_tr);
 
-  int percentAscent =
-    _display.getAscent();
+  int percentAscent = _display.getAscent();
+  int percentDescent = _display.getDescent();
+  int percentHeight = percentAscent - percentDescent;
 
-  int percentDescent =
-    _display.getDescent();
+  int percentX = x + numberWidth + max(2, (int)round(_minDim * 0.02));
+  int percentTop = y + max(0, (numberHeight - percentHeight) / 2);
 
-  int percentHeight =
-    percentAscent -
-    percentDescent;
-
-  int percentX =
-    x +
-    numberWidth +
-    max(
-      2,
-      (int)round(
-        _minDim * 0.02
-      )
-    );
-
-  int percentTop =
-    y +
-    max(
-      0,
-      (
-        numberHeight -
-        percentHeight
-      ) / 2
-    );
-
-  _display.drawStr(
-    percentX,
-    percentTop +
-      percentAscent,
-    "%"
-  );
+  _display.drawStr(percentX, percentTop + percentAscent, "%");
 }
 
 // =====================================================
 //                     ANIMATION
 // =====================================================
 
-float DisplayManager::smoothStep(
-  float value
-) {
-
-  value =
-    constrain(
-      value,
-      0.0,
-      1.0
-    );
-
-  return
-    value *
-    value *
-    (
-      3.0 -
-      2.0 *
-      value
-    );
+float DisplayManager::smoothStep(float value) {
+  value = constrain(value, 0.0, 1.0);
+  return value * value * (3.0 - 2.0 * value);
 }
 
 void DisplayManager::startAnimation() {
-
-  _tankStart =
-    _displayedTank;
-
-  _tankTarget =
-    _displayData.tankPercent;
-
-  _batteryStart =
-    _displayedBattery;
-
-  _batteryTarget =
-    _displayData.batteryPercent;
-
-  _animationStart =
-    millis();
-
-  _animationActive =
-    true;
+  _tankStart = _displayedTank;
+  _tankTarget = _displayData.tankPercent;
+  _batteryStart = _displayedBattery;
+  _batteryTarget = _displayData.batteryPercent;
+  _animationStart = millis();
+  _animationActive = true;
 }
 
 void DisplayManager::updateAnimation() {
-
-  if (
-    !_animationActive
-  ) {
-
+  if (!_animationActive) {
     return;
   }
 
-  float progress =
-    (float)(
-      millis() -
-      _animationStart
-    ) /
-    ANIMATION_DURATION;
-
-  if (
-    progress >= 1.0
-  ) {
-
-    progress =
-      1.0;
-
-    _animationActive =
-      false;
+  float progress = (float)(millis() - _animationStart) / ANIMATION_DURATION;
+  if (progress >= 1.0) {
+    progress = 1.0;
+    _animationActive = false;
   }
 
-  progress =
-    smoothStep(
-      progress
-    );
-
-  _displayedTank =
-    _tankStart +
-    (
-      _tankTarget -
-      _tankStart
-    ) *
-    progress;
-
-  _displayedBattery =
-    _batteryStart +
-    (
-      _batteryTarget -
-      _batteryStart
-    ) *
-    progress;
+  progress = smoothStep(progress);
+  _displayedTank = _tankStart + (_tankTarget - _tankStart) * progress;
+  _displayedBattery = _batteryStart + (_batteryTarget - _batteryStart) * progress;
 }
 
 // =====================================================
@@ -1631,9 +1466,13 @@ void DisplayManager::updateData(const DisplayData& data) {
   }
 }
 
-void DisplayManager::showNotConnected() {
+void DisplayManager::_resetDisplayState() {
   _displayData.valid = false;
   _animationActive = false;
+}
+
+void DisplayManager::showNotConnected() {
+  _resetDisplayState();
   drawNotConnectedScreen();
 }
 
@@ -1642,8 +1481,7 @@ void DisplayManager::showWiFiNudge(
   const String& ip,
   const char* statusMsg
 ) {
-  _displayData.valid = false;
-  _animationActive = false;
+  _resetDisplayState();
   drawWiFiNudgeScreen(ssid, ip, statusMsg);
 }
 
@@ -1651,10 +1489,10 @@ void DisplayManager::showWiFiConnected(
   const String& ssid,
   const String& ip
 ) {
-  _displayData.valid = false;
-  _animationActive = false;
+  _resetDisplayState();
   drawWiFiConnectedScreen(ssid, ip);
 }
+
 
 // =====================================================
 //             UI TIMEOUT & POWER MANAGEMENT
@@ -2059,10 +1897,6 @@ void DisplayManager::updateSection(SectionId secId, unsigned long now) {
       _lastFooterUpdate = now;
       drawCurrentScreen();
     }
-  } else if (secId == SECTION_CONFIG) {
-    drawCurrentScreen();
-  } else if (secId == SECTION_DEV) {
-    drawCurrentScreen();
   } else {
     drawCurrentScreen();
   }

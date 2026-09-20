@@ -23,59 +23,6 @@ void TankConfigManager::loadDefaults() {
   }
 }
 
-void TankConfigManager::begin() {
-  if (!load()) {
-    Serial.println("[TankConfig] No valid stored configuration found. Writing defaults.");
-    loadDefaults();
-    save();
-  } else {
-    Serial.println("[TankConfig] Loaded persistent configuration successfully.");
-  }
-}
-
-bool TankConfigManager::load() {
-  _prefs.begin("cfg_tank", true);
-  size_t len = _prefs.getBytesLength("settings");
-  if (len != sizeof(TankSettings)) {
-    _prefs.end();
-    return false;
-  }
-
-  TankSettings temp;
-  _prefs.getBytes("settings", &temp, sizeof(TankSettings));
-  _prefs.end();
-
-  if (temp.schemaVersion != CURRENT_SCHEMA_VERSION) {
-    Serial.println("[TankConfig] Schema version mismatch; loading defaults.");
-    return false;
-  }
-
-  String err;
-  if (!validate(temp, err)) {
-    Serial.print("[TankConfig] Validation failed: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _settings = temp;
-  return true;
-}
-
-bool TankConfigManager::save() {
-  String err;
-  if (!validate(_settings, err)) {
-    Serial.print("[TankConfig] Cannot save invalid settings: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _prefs.begin("cfg_tank", false);
-  size_t written = _prefs.putBytes("settings", &_settings, sizeof(TankSettings));
-  _prefs.end();
-
-  return (written == sizeof(TankSettings));
-}
-
 bool TankConfigManager::validate(const TankSettings& s, String& err) {
   if (s.count == 0 || s.count > MAX_TANKS) {
     err = "Tank count must be between 1 and " + String(MAX_TANKS);

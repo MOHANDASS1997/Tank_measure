@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include "config/BoardConfig.h"
+#include "config/BaseConfigManager.h"
 #include "config/SystemConfig.h"
 #include "config/LoRaConfig.h"
 #include "config/PacketConfig.h"

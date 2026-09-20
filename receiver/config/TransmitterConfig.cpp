@@ -24,59 +24,6 @@ void TransmitterConfigManager::loadDefaults() {
   }
 }
 
-void TransmitterConfigManager::begin() {
-  if (!load()) {
-    Serial.println("[TransmitterConfig] No valid stored configuration found. Writing defaults.");
-    loadDefaults();
-    save();
-  } else {
-    Serial.println("[TransmitterConfig] Loaded persistent configuration successfully.");
-  }
-}
-
-bool TransmitterConfigManager::load() {
-  _prefs.begin("cfg_tx", true);
-  size_t len = _prefs.getBytesLength("settings");
-  if (len != sizeof(TransmitterSettings)) {
-    _prefs.end();
-    return false;
-  }
-
-  TransmitterSettings temp;
-  _prefs.getBytes("settings", &temp, sizeof(TransmitterSettings));
-  _prefs.end();
-
-  if (temp.schemaVersion != CURRENT_SCHEMA_VERSION) {
-    Serial.println("[TransmitterConfig] Schema version mismatch; loading defaults.");
-    return false;
-  }
-
-  String err;
-  if (!validate(temp, err)) {
-    Serial.print("[TransmitterConfig] Validation failed: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _settings = temp;
-  return true;
-}
-
-bool TransmitterConfigManager::save() {
-  String err;
-  if (!validate(_settings, err)) {
-    Serial.print("[TransmitterConfig] Cannot save invalid settings: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _prefs.begin("cfg_tx", false);
-  size_t written = _prefs.putBytes("settings", &_settings, sizeof(TransmitterSettings));
-  _prefs.end();
-
-  return (written == sizeof(TransmitterSettings));
-}
-
 bool TransmitterConfigManager::validate(const TransmitterSettings& s, String& err) {
   if (s.count == 0 || s.count > MAX_TRANSMITTERS) {
     err = "Transmitter count must be between 1 and " + String(MAX_TRANSMITTERS);

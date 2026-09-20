@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include "BaseConfigManager.h"
 
 // =====================================================
 //                     TIME CONFIG
@@ -20,24 +21,16 @@ struct TimeSettings {
   int daylightOffsetSec;
 };
 
-class TimeConfigManager {
+class TimeConfigManager : public BaseConfigManager<TimeConfigManager, TimeSettings> {
 public:
   static const uint16_t CURRENT_SCHEMA_VERSION = 1;
+  static const char* getNvsNamespace() { return "cfg_time"; }
+  static const char* getTag() { return "TimeConfig"; }
 
   TimeConfigManager();
 
-  void begin();
   void loadDefaults();
-  bool load();
-  bool save();
   bool validate(const TimeSettings& settings, String& err);
-
-  const TimeSettings& get() const { return _settings; }
-  void set(const TimeSettings& settings) { _settings = settings; }
-
-private:
-  TimeSettings _settings;
-  Preferences _prefs;
 };
 
 extern TimeConfigManager timeConfig;

@@ -3,12 +3,11 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "BoardConfig.h"
+#include "BaseConfigManager.h"
 
 // =====================================================
 //             BATTERY & INA219 HARDWARE CONFIG
 // =====================================================
-
-
 
 // INA219 I2C Hardware Settings (Fixed Hardware)
 #define INA219_I2C_ADDRESS 0x40
@@ -69,24 +68,16 @@ struct BatterySettings {
   VoltagePercentPoint voltageTable[MAX_VOLTAGE_TABLE_POINTS];
 };
 
-class BatteryConfigManager {
+class BatteryConfigManager : public BaseConfigManager<BatteryConfigManager, BatterySettings> {
 public:
   static const uint16_t CURRENT_SCHEMA_VERSION = 1;
+  static const char* getNvsNamespace() { return "cfg_battery"; }
+  static const char* getTag() { return "BatteryConfig"; }
 
   BatteryConfigManager();
 
-  void begin();
   void loadDefaults();
-  bool load();
-  bool save();
   bool validate(const BatterySettings& settings, String& err);
-
-  const BatterySettings& get() const { return _settings; }
-  void set(const BatterySettings& settings) { _settings = settings; }
-
-private:
-  BatterySettings _settings;
-  Preferences _prefs;
 };
 
 extern BatteryConfigManager batteryConfig;

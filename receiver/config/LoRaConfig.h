@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include "BaseConfigManager.h"
 
 // =====================================================
 //                     LORA CONFIG
@@ -21,24 +22,16 @@ struct LoRaSettings {
   unsigned long baudRate;
 };
 
-class LoRaConfigManager {
+class LoRaConfigManager : public BaseConfigManager<LoRaConfigManager, LoRaSettings> {
 public:
   static const uint16_t CURRENT_SCHEMA_VERSION = 1;
+  static const char* getNvsNamespace() { return "cfg_lora"; }
+  static const char* getTag() { return "LoRaConfig"; }
 
   LoRaConfigManager();
 
-  void begin();
   void loadDefaults();
-  bool load();
-  bool save();
   bool validate(const LoRaSettings& settings, String& err);
-
-  const LoRaSettings& get() const { return _settings; }
-  void set(const LoRaSettings& settings) { _settings = settings; }
-
-private:
-  LoRaSettings _settings;
-  Preferences _prefs;
 };
 
 extern LoRaConfigManager loraConfigManager;

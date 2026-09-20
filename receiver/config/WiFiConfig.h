@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include "BaseConfigManager.h"
 
 // =====================================================
 //                     WIFI CONFIG
@@ -25,26 +26,19 @@ struct WiFiSettings {
   uint32_t connectTimeoutMs;
 };
 
-class WiFiConfigManager {
+class WiFiConfigManager : public BaseConfigManager<WiFiConfigManager, WiFiSettings> {
 public:
   static const uint16_t CURRENT_SCHEMA_VERSION = 1;
+  static const char* getNvsNamespace() { return "cfg_wifi"; }
+  static const char* getTag() { return "WiFiConfig"; }
 
   WiFiConfigManager();
 
   void begin();
   void loadDefaults();
-  bool load();
-  bool save();
   bool validate(const WiFiSettings& settings, String& err);
 
-  const WiFiSettings& get() const { return _settings; }
-  void set(const WiFiSettings& settings) { _settings = settings; }
-
   void setCredentials(const char* ssid, const char* pass);
-
-private:
-  WiFiSettings _settings;
-  Preferences _prefs;
 };
 
 extern WiFiConfigManager wifiConfig;

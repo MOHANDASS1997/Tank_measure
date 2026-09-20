@@ -453,132 +453,81 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
   if (!displayLayoutConfig.validate(sDisplay, outError)) return false;
 
   // COMMIT PHASE: Atomically apply and save to NVS
-  wifiConfig.set(sWifi);
-  wifiConfig.save();
-
-  tankConfig.set(sTank);
-  tankConfig.save();
-
-  transmitterConfig.set(sTx);
-  transmitterConfig.save();
-
-  batteryConfig.set(sBattery);
-  batteryConfig.save();
-
-  systemConfig.set(sSystem);
-  systemConfig.save();
-
-  loraConfigManager.set(sLoRa);
-  loraConfigManager.save();
-
-  timeConfig.set(sTime);
-  timeConfig.save();
-
-  devConfig.set(sDev);
-  devConfig.save();
-
-  displayLayoutConfig.set(sDisplay);
-  displayLayoutConfig.save();
+  wifiConfig.set(sWifi); wifiConfig.save();
+  tankConfig.set(sTank); tankConfig.save();
+  transmitterConfig.set(sTx); transmitterConfig.save();
+  batteryConfig.set(sBattery); batteryConfig.save();
+  systemConfig.set(sSystem); systemConfig.save();
+  loraConfigManager.set(sLoRa); loraConfigManager.save();
+  timeConfig.set(sTime); timeConfig.save();
+  devConfig.set(sDev); devConfig.save();
+  displayLayoutConfig.set(sDisplay); displayLayoutConfig.save();
 
   Serial.println("[Config] All 9 configuration objects updated and persisted successfully.");
   return true;
 }
 
+namespace {
+struct SectionResetEntry {
+  const char* name;
+  void (*resetFn)();
+  const char* logMsg;
+};
+
+const SectionResetEntry SECTION_RESETS[] = {
+  { "wifi", []() { wifiConfig.loadDefaults(); wifiConfig.save(); }, "[Config] Wi-Fi settings reset to factory defaults." },
+  { "tanks", []() { tankConfig.loadDefaults(); tankConfig.save(); }, "[Config] Tank settings reset to factory defaults." },
+  { "transmitters", []() { transmitterConfig.loadDefaults(); transmitterConfig.save(); }, "[Config] Transmitter mappings reset to factory defaults." },
+  { "battery", []() { batteryConfig.loadDefaults(); batteryConfig.save(); }, "[Config] Battery & charge settings reset to factory defaults." },
+  { "system", []() { systemConfig.loadDefaults(); systemConfig.save(); }, "[Config] System & UI settings reset to factory defaults." },
+  { "lora", []() { loraConfigManager.loadDefaults(); loraConfigManager.save(); }, "[Config] LoRa settings reset to factory defaults." },
+  { "time", []() { timeConfig.loadDefaults(); timeConfig.save(); }, "[Config] Time settings reset to factory defaults." },
+  { "display", []() {
+      displayLayoutConfig.loadDefaults();
+      displayLayoutConfig.save();
+      DevSettings sd = devConfig.get();
+      sd.devModeEnabled = false;
+      devConfig.set(sd);
+      devConfig.save();
+    }, "[Config] Display layout settings reset to factory defaults." },
+  { "dev", []() {
+      devConfig.loadDefaults();
+      devConfig.save();
+      DisplayLayoutSettings dl = displayLayoutConfig.get();
+      for (int s = 0; s < SECTION_COUNT; s++) {
+        if (dl.sections[s].sectionId == SECTION_DEV) {
+          dl.sections[s].enabled = false;
+        }
+      }
+      displayLayoutConfig.set(dl);
+      displayLayoutConfig.save();
+    }, "[Config] Dev Mode settings reset to factory defaults." }
+};
+} // anonymous namespace
+
 bool ConfigJsonHelper::resetAllToDefaults(String& outError) {
-  wifiConfig.loadDefaults();
-  wifiConfig.save();
-
-  tankConfig.loadDefaults();
-  tankConfig.save();
-
-  transmitterConfig.loadDefaults();
-  transmitterConfig.save();
-
-  batteryConfig.loadDefaults();
-  batteryConfig.save();
-
-  systemConfig.loadDefaults();
-  systemConfig.save();
-
-  loraConfigManager.loadDefaults();
-  loraConfigManager.save();
-
-  timeConfig.loadDefaults();
-  timeConfig.save();
-
-  devConfig.loadDefaults();
-  devConfig.save();
-
-  displayLayoutConfig.loadDefaults();
-  displayLayoutConfig.save();
-
+  for (const auto& entry : SECTION_RESETS) {
+    entry.resetFn();
+  }
   Serial.println("[Config] All 9 configuration objects restored to factory defaults.");
   return true;
 }
 
 bool ConfigJsonHelper::resetSection(const String& section, String& outError) {
-  if (section == "wifi") {
-    wifiConfig.loadDefaults();
-    wifiConfig.save();
-    Serial.println("[Config] Wi-Fi settings reset to factory defaults.");
-    return true;
-  } else if (section == "tanks") {
-    tankConfig.loadDefaults();
-    tankConfig.save();
-    Serial.println("[Config] Tank settings reset to factory defaults.");
-    return true;
-  } else if (section == "transmitters") {
-    transmitterConfig.loadDefaults();
-    transmitterConfig.save();
-    Serial.println("[Config] Transmitter mappings reset to factory defaults.");
-    return true;
-  } else if (section == "battery") {
-    batteryConfig.loadDefaults();
-    batteryConfig.save();
-    Serial.println("[Config] Battery & charge settings reset to factory defaults.");
-    return true;
-  } else if (section == "system") {
-    systemConfig.loadDefaults();
-    systemConfig.save();
-    Serial.println("[Config] System & UI settings reset to factory defaults.");
-    return true;
-  } else if (section == "lora") {
-    loraConfigManager.loadDefaults();
-    loraConfigManager.save();
-    Serial.println("[Config] LoRa settings reset to factory defaults.");
-    return true;
-  } else if (section == "time") {
-    timeConfig.loadDefaults();
-    timeConfig.save();
-    Serial.println("[Config] Time settings reset to factory defaults.");
-    return true;
-  } else if (section == "display") {
-    displayLayoutConfig.loadDefaults();
-    displayLayoutConfig.save();
-    DevSettings sd = devConfig.get();
-    sd.devModeEnabled = false;
-    devConfig.set(sd);
-    devConfig.save();
-    Serial.println("[Config] Display layout settings reset to factory defaults.");
-    return true;
-  } else if (section == "dev") {
-    devConfig.loadDefaults();
-    devConfig.save();
-    DisplayLayoutSettings dl = displayLayoutConfig.get();
-    for (int s = 0; s < SECTION_COUNT; s++) {
-      if (dl.sections[s].sectionId == SECTION_DEV) {
-        dl.sections[s].enabled = false;
-      }
-    }
-    displayLayoutConfig.set(dl);
-    displayLayoutConfig.save();
-    Serial.println("[Config] Dev Mode settings reset to factory defaults.");
-    return true;
-  } else if (section == "all" || section.length() == 0) {
+  if (section == "all" || section.length() == 0) {
     return resetAllToDefaults(outError);
-  } else {
-    outError = "Unknown configuration section: " + section;
-    return false;
   }
+
+  for (const auto& entry : SECTION_RESETS) {
+    if (section == entry.name) {
+      entry.resetFn();
+      Serial.println(entry.logMsg);
+      return true;
+    }
+  }
+
+  outError = "Unknown configuration section: " + section;
+  return false;
 }
+
 

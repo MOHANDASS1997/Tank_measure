@@ -39,59 +39,6 @@ void BatteryConfigManager::loadDefaults() {
   }
 }
 
-void BatteryConfigManager::begin() {
-  if (!load()) {
-    Serial.println("[BatteryConfig] No valid stored configuration found. Writing defaults.");
-    loadDefaults();
-    save();
-  } else {
-    Serial.println("[BatteryConfig] Loaded persistent configuration successfully.");
-  }
-}
-
-bool BatteryConfigManager::load() {
-  _prefs.begin("cfg_battery", true);
-  size_t len = _prefs.getBytesLength("settings");
-  if (len != sizeof(BatterySettings)) {
-    _prefs.end();
-    return false;
-  }
-
-  BatterySettings temp;
-  _prefs.getBytes("settings", &temp, sizeof(BatterySettings));
-  _prefs.end();
-
-  if (temp.schemaVersion != CURRENT_SCHEMA_VERSION) {
-    Serial.println("[BatteryConfig] Schema version mismatch; loading defaults.");
-    return false;
-  }
-
-  String err;
-  if (!validate(temp, err)) {
-    Serial.print("[BatteryConfig] Validation failed: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _settings = temp;
-  return true;
-}
-
-bool BatteryConfigManager::save() {
-  String err;
-  if (!validate(_settings, err)) {
-    Serial.print("[BatteryConfig] Cannot save invalid settings: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _prefs.begin("cfg_battery", false);
-  size_t written = _prefs.putBytes("settings", &_settings, sizeof(BatterySettings));
-  _prefs.end();
-
-  return (written == sizeof(BatterySettings));
-}
-
 bool BatteryConfigManager::validate(const BatterySettings& s, String& err) {
   if (s.currentChargingThresholdMa >= s.currentDischargingThresholdMa) {
     err = "Charging current threshold must be less than discharging current threshold";

@@ -47,49 +47,6 @@ void WiFiConfigManager::begin() {
   }
 }
 
-bool WiFiConfigManager::load() {
-  _prefs.begin("cfg_wifi", true);
-  size_t len = _prefs.getBytesLength("settings");
-  if (len != sizeof(WiFiSettings)) {
-    _prefs.end();
-    return false;
-  }
-
-  WiFiSettings temp;
-  _prefs.getBytes("settings", &temp, sizeof(WiFiSettings));
-  _prefs.end();
-
-  if (temp.schemaVersion != CURRENT_SCHEMA_VERSION) {
-    Serial.println("[WiFiConfig] Schema version mismatch; loading defaults.");
-    return false;
-  }
-
-  String err;
-  if (!validate(temp, err)) {
-    Serial.print("[WiFiConfig] Validation failed: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _settings = temp;
-  return true;
-}
-
-bool WiFiConfigManager::save() {
-  String err;
-  if (!validate(_settings, err)) {
-    Serial.print("[WiFiConfig] Cannot save invalid settings: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _prefs.begin("cfg_wifi", false);
-  size_t written = _prefs.putBytes("settings", &_settings, sizeof(WiFiSettings));
-  _prefs.end();
-
-  return (written == sizeof(WiFiSettings));
-}
-
 bool WiFiConfigManager::validate(const WiFiSettings& s, String& err) {
   if (s.connectTimeoutMs < 2000 || s.connectTimeoutMs > 30000) {
     err = "Wi-Fi connection timeout must be between 2s and 30s";

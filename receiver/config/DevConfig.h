@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include "BaseConfigManager.h"
 
 // =====================================================
 //                     DEV CONFIG
@@ -12,24 +13,16 @@ struct DevSettings {
   bool devModeEnabled; // "Enable Dev Mode Entry Point" (default: false)
 };
 
-class DevConfigManager {
+class DevConfigManager : public BaseConfigManager<DevConfigManager, DevSettings> {
 public:
   static const uint16_t CURRENT_SCHEMA_VERSION = 1;
+  static const char* getNvsNamespace() { return "cfg_dev"; }
+  static const char* getTag() { return "DevConfig"; }
 
   DevConfigManager();
 
-  void begin();
   void loadDefaults();
-  bool load();
-  bool save();
   bool validate(const DevSettings& settings, String& err);
-
-  const DevSettings& get() const { return _settings; }
-  void set(const DevSettings& settings) { _settings = settings; }
-
-private:
-  DevSettings _settings;
-  Preferences _prefs;
 };
 
 extern DevConfigManager devConfig;

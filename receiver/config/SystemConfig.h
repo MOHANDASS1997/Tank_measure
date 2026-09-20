@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include "BaseConfigManager.h"
 
 // =====================================================
 //                   SYSTEM CONFIG
@@ -16,24 +17,16 @@ struct SystemSettings {
   bool autoSleepEnabled;                // true = OLED sleeps after uiTimeoutMs, false = Always ON
 };
 
-class SystemConfigManager {
+class SystemConfigManager : public BaseConfigManager<SystemConfigManager, SystemSettings> {
 public:
   static const uint16_t CURRENT_SCHEMA_VERSION = 1;
+  static const char* getNvsNamespace() { return "cfg_system"; }
+  static const char* getTag() { return "SystemConfig"; }
 
   SystemConfigManager();
 
-  void begin();
   void loadDefaults();
-  bool load();
-  bool save();
   bool validate(const SystemSettings& settings, String& err);
-
-  const SystemSettings& get() const { return _settings; }
-  void set(const SystemSettings& settings) { _settings = settings; }
-
-private:
-  SystemSettings _settings;
-  Preferences _prefs;
 };
 
 extern SystemConfigManager systemConfig;

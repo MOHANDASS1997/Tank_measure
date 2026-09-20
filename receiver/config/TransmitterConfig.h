@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include "BaseConfigManager.h"
 
 // =====================================================
 //              TRANSMITTER CONFIGURATION
@@ -28,20 +29,16 @@ struct TransmitterSettings {
   TransmitterConfig transmitters[MAX_TRANSMITTERS];
 };
 
-class TransmitterConfigManager {
+class TransmitterConfigManager : public BaseConfigManager<TransmitterConfigManager, TransmitterSettings> {
 public:
   static const uint16_t CURRENT_SCHEMA_VERSION = 1;
+  static const char* getNvsNamespace() { return "cfg_tx"; }
+  static const char* getTag() { return "TransmitterConfig"; }
 
   TransmitterConfigManager();
 
-  void begin();
   void loadDefaults();
-  bool load();
-  bool save();
   bool validate(const TransmitterSettings& settings, String& err);
-
-  const TransmitterSettings& get() const { return _settings; }
-  void set(const TransmitterSettings& settings) { _settings = settings; }
 
   bool findTransmitter(int transmitterAddress, TransmitterConfig& result) const;
   uint8_t getCount() const { return _settings.count; }
@@ -50,10 +47,6 @@ public:
   bool addTransmitter(const TransmitterConfig& tx);
   bool updateTransmitter(uint8_t index, const TransmitterConfig& tx);
   bool removeTransmitter(uint8_t index);
-
-private:
-  TransmitterSettings _settings;
-  Preferences _prefs;
 };
 
 extern TransmitterConfigManager transmitterConfig;

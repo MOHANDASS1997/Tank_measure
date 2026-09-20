@@ -33,59 +33,6 @@ void DisplayLayoutManager::loadDefaults() {
   _settings.sections[2].pages[0].enabled = true;
 }
 
-void DisplayLayoutManager::begin() {
-  if (!load()) {
-    Serial.println("[DisplayLayout] No valid stored configuration found. Writing defaults.");
-    loadDefaults();
-    save();
-  } else {
-    Serial.println("[DisplayLayout] Loaded persistent configuration successfully.");
-  }
-}
-
-bool DisplayLayoutManager::load() {
-  _prefs.begin("cfg_dlayout", true);
-  size_t len = _prefs.getBytesLength("settings");
-  if (len != sizeof(DisplayLayoutSettings)) {
-    _prefs.end();
-    return false;
-  }
-
-  DisplayLayoutSettings temp;
-  _prefs.getBytes("settings", &temp, sizeof(DisplayLayoutSettings));
-  _prefs.end();
-
-  if (temp.schemaVersion != CURRENT_SCHEMA_VERSION) {
-    Serial.println("[DisplayLayout] Schema version mismatch; migrating to defaults.");
-    return false;
-  }
-
-  String err;
-  if (!validate(temp, err)) {
-    Serial.print("[DisplayLayout] Validation failed: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _settings = temp;
-  return true;
-}
-
-bool DisplayLayoutManager::save() {
-  String err;
-  if (!validate(_settings, err)) {
-    Serial.print("[DisplayLayout] Cannot save invalid settings: ");
-    Serial.println(err);
-    return false;
-  }
-
-  _prefs.begin("cfg_dlayout", false);
-  size_t written = _prefs.putBytes("settings", &_settings, sizeof(DisplayLayoutSettings));
-  _prefs.end();
-
-  return (written == sizeof(DisplayLayoutSettings));
-}
-
 bool DisplayLayoutManager::validate(const DisplayLayoutSettings& s, String& err) {
   if (s.schemaVersion != CURRENT_SCHEMA_VERSION) {
     err = "Invalid schema version";
