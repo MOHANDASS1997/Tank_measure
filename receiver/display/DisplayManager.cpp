@@ -8,22 +8,24 @@ DisplayManager displayManager;
 
 DisplayManager::DisplayManager()
   : _display(U8G2_R0, U8X8_PIN_NONE),
-    _currentPage(PAGE_TANK),
-    _displayMode(DISPLAY_MODE_NORMAL),
-    _lastOpenedScreen(DISPLAY_MODE_NORMAL),
-    _currentTestScreen(TEST_SCREEN_INA219),
+    _currentSectionId(DEFAULT_SECTION_ID),
+    _lastOpenedSection(DEFAULT_SECTION_ID),
+    _currentPageIndex(0),
+    _selectionScreenActive(false),
     _selectionIndex(0),
-    _selectionCount(2),
+    _selectionCount(0),
     _displayAwake(true),
     _lastUiActivityTime(0),
     _uiTimeoutMs(UI_TIMEOUT_MS),
     _chargingAnimationActive(false),
     _chargingAnimationStart(0),
-    _savedPageBeforeAnimation(PAGE_TANK),
-    _savedTestScreenBeforeAnimation(TEST_SCREEN_INA219),
-    _savedModeBeforeAnimation(DISPLAY_MODE_NORMAL),
+    _savedSectionBeforeAnimation(DEFAULT_SECTION_ID),
+    _savedPageIndexBeforeAnimation(0),
+    _savedSelectionActiveBeforeAnimation(false),
     _lastChargingState(false),
     _wasConfigModeActive(false),
+    _promptActive(false),
+    _promptStartTime(0),
     _screenW(128),
     _screenH(64),
     _minDim(64),
@@ -38,6 +40,10 @@ DisplayManager::DisplayManager()
     _waitAnimAngle(0.0f),
     _lastWaitAnimUpdate(0),
     _lastFooterUpdate(0) {
+
+  for (int s = 0; s < SECTION_COUNT; s++) {
+    _sectionLastUpdateMs[s] = 0;
+  }
 
   _displayData.valid = false;
   _displayData.hasBattery = false;
@@ -104,6 +110,7 @@ void DisplayManager::begin() {
 
   _lastUiActivityTime = millis();
   _lastChargingState = batteryLedManager.isCharging();
+  setSection(DEFAULT_SECTION_ID, 0);
 }
 
 // =====================================================
@@ -340,21 +347,32 @@ void DisplayManager::drawFooter() {
 
   // ---------------------------------------------------
   // Left: Elongated Curved Rectangle Page Indicator
-  // (Only if battery data exists)
+  // (Rendered if the active section has more than 1 available page)
   // ---------------------------------------------------
-  if (_displayData.hasBattery) {
+  const SectionLayoutEntry* sec = displayLayoutConfig.getSection(_currentSectionId);
+  uint8_t availCount = 0;
+  uint8_t activeAvailIndex = 0;
+  if (sec != nullptr) {
+    for (uint8_t i = 0; i < sec->pageCount; i++) {
+      if (isPageAvailable(sec->pages[i].pageId)) {
+        if (i == _currentPageIndex) {
+          activeAvailIndex = availCount;
+        }
+        availCount++;
+      }
+    }
+  }
+
+  if (availCount > 1) {
     int pillY = _screenH - 5;
     int pillH = 4;
     int pillR = 1;
+    int startX = 4;
 
-    if (_currentPage == PAGE_TANK) {
-      // Tank active (elongated pill on left, small pill on right)
-      _display.drawRBox(4, pillY, 10, pillH, pillR);
-      _display.drawRBox(17, pillY, 4, pillH, pillR);
-    } else {
-      // Battery active (small pill on left, elongated pill on right)
-      _display.drawRBox(4, pillY, 4, pillH, pillR);
-      _display.drawRBox(11, pillY, 10, pillH, pillR);
+    for (uint8_t p = 0; p < availCount; p++) {
+      int w = (p == activeAvailIndex) ? 10 : 4;
+      _display.drawRBox(startX, pillY, w, pillH, pillR);
+      startX += w + 3;
     }
   }
 
@@ -1420,64 +1438,183 @@ void DisplayManager::drawBatteryScreen(
 }
 
 // =====================================================
+//             SECTION & PAGE DEFINITIONS & HELPERS
+// =====================================================
+
+const SectionDef* DisplayManager::getSectionDef(SectionId id) const {
+  for (uint8_t i = 0; i < DISPLAY_SECTION_COUNT; i++) {
+    if (DISPLAY_SECTIONS[i].id == id) {
+      return &DISPLAY_SECTIONS[i];
+    }
+  }
+  return nullptr;
+}
+
+const SectionDef* DisplayManager::getCurrentSectionDef() const {
+  return getSectionDef(_currentSectionId);
+}
+
+PageId DisplayManager::getCurrentPageId() const {
+  const SectionLayoutEntry* sec = displayLayoutConfig.getSection(_currentSectionId);
+  if (sec != nullptr && sec->pageCount > 0) {
+    uint8_t idx = _currentPageIndex;
+    if (idx >= sec->pageCount) idx = 0;
+    return sec->pages[idx].pageId;
+  }
+  return PAGE_TANK_LEVEL;
+}
+
+bool DisplayManager::isPageAvailable(PageId pageId) const {
+  if (!displayLayoutConfig.isPageEnabled(pageId)) {
+    return false;
+  }
+  if (pageId == PAGE_TRANSMITTER_BATTERY) {
+    return _displayData.hasBattery;
+  }
+  if (pageId == PAGE_DEV_INA219) {
+    return displayLayoutConfig.isSectionEnabled(SECTION_DEV) || devConfig.get().devModeEnabled;
+  }
+  return true;
+}
+
+void DisplayManager::setSection(SectionId newSection, uint8_t pageIndex) {
+  // If leaving config mode, notify WiFiManager
+  if (_currentSectionId == SECTION_CONFIG && newSection != SECTION_CONFIG) {
+    if (wifiManager.isConfigModeActive()) {
+      wifiManager.exitConfigMode();
+    }
+  }
+
+  _currentSectionId = newSection;
+  if (newSection != SECTION_CONFIG) {
+    _lastOpenedSection = newSection;
+  }
+  _currentPageIndex = pageIndex;
+  _selectionScreenActive = false;
+
+  // If entering config mode, notify WiFiManager
+  if (newSection == SECTION_CONFIG) {
+    if (!wifiManager.isConfigModeActive()) {
+      wifiManager.enterConfigMode();
+    }
+  }
+
+  // Ensure current page index is valid and available
+  const SectionLayoutEntry* sec = displayLayoutConfig.getSection(newSection);
+  if (sec != nullptr && sec->pageCount > 0) {
+    if (_currentPageIndex >= sec->pageCount || !isPageAvailable(sec->pages[_currentPageIndex].pageId)) {
+      _currentPageIndex = 0;
+      for (uint8_t i = 0; i < sec->pageCount; i++) {
+        if (isPageAvailable(sec->pages[i].pageId)) {
+          _currentPageIndex = i;
+          break;
+        }
+      }
+    }
+  }
+
+  resetTimeout();
+  drawCurrentScreen();
+}
+
+void DisplayManager::nextSectionPage() {
+  if (_selectionScreenActive) return;
+
+  const SectionLayoutEntry* sec = displayLayoutConfig.getSection(_currentSectionId);
+  if (sec == nullptr || sec->pageCount <= 1) {
+    return;
+  }
+
+  uint8_t nextIdx = _currentPageIndex;
+  for (uint8_t i = 0; i < sec->pageCount; i++) {
+    nextIdx = (nextIdx + 1) % sec->pageCount;
+    PageId pid = sec->pages[nextIdx].pageId;
+    if (isPageAvailable(pid)) {
+      _currentPageIndex = nextIdx;
+      break;
+    }
+  }
+
+  resetTimeout();
+  drawCurrentScreen();
+}
+
+// =====================================================
 //                  UI CONTROLLER
 // =====================================================
 
 void DisplayManager::drawCurrentScreen() {
-
   if (!_displayAwake || _chargingAnimationActive) {
     return;
   }
 
+  // Priority 0: Active Setup Prompt Notification
+  if (_promptActive) {
+    drawPromptScreen();
+    return;
+  }
+
   // Priority 1: Selection Screen (popup menu on long press)
-  if (_displayMode == DISPLAY_MODE_SELECTION) {
+  if (_selectionScreenActive) {
     drawSelectionScreen();
     return;
   }
 
-  // Priority 2: Configuration Mode Screen
-  if (_displayMode == DISPLAY_MODE_CONFIG || wifiManager.isConfigModeActive()) {
-    drawConfigScreen(wifiManager.getSSID(), wifiManager.getHostname(), wifiManager.getIP(), wifiManager.getConfigModeRemainingSeconds());
-    return;
+  // Priority 2: Active Section
+  drawSection(_currentSectionId);
+}
+
+void DisplayManager::drawSection(SectionId secId) {
+  const SectionLayoutEntry* sec = displayLayoutConfig.getSection(secId);
+  if (sec == nullptr || sec->pageCount == 0) return;
+
+  if (_currentPageIndex >= sec->pageCount) {
+    _currentPageIndex = 0;
   }
 
-  // Priority 3: Dev Mode Diagnostic Screen
-  if (_displayMode == DISPLAY_MODE_DEV) {
-    updateTestScreen();
-    return;
+  if (!isPageAvailable(sec->pages[_currentPageIndex].pageId)) {
+    for (uint8_t i = 0; i < sec->pageCount; i++) {
+      if (isPageAvailable(sec->pages[i].pageId)) {
+        _currentPageIndex = i;
+        break;
+      }
+    }
   }
 
-  if (
-    !_displayData.valid
-  ) {
+  PageId pid = sec->pages[_currentPageIndex].pageId;
+  drawPage(pid);
+}
 
-    drawNotConnectedScreen();
+void DisplayManager::drawPage(PageId pageId) {
+  switch (pageId) {
+    case PAGE_TANK_LEVEL:
+      if (!_displayData.valid) {
+        drawNotConnectedScreen();
+      } else {
+        drawTankScreen(_displayedTank);
+      }
+      break;
 
-    return;
-  }
+    case PAGE_TRANSMITTER_BATTERY:
+      if (!_displayData.valid) {
+        drawNotConnectedScreen();
+      } else if (!_displayData.hasBattery) {
+        drawTankScreen(_displayedTank);
+      } else {
+        drawBatteryScreen(_displayedBattery);
+      }
+      break;
 
-  // If battery data is not present, always stay on tank page
-  if (
-    !_displayData.hasBattery &&
-    _currentPage == PAGE_BATTERY
-  ) {
-    _currentPage = PAGE_TANK;
-  }
+    case PAGE_CONFIG_PORTAL:
+      drawConfigScreen(wifiManager.getSSID(), wifiManager.getHostname(), wifiManager.getIP(), wifiManager.getConfigModeRemainingSeconds());
+      break;
 
-  if (
-    _currentPage ==
-    PAGE_TANK
-  ) {
+    case PAGE_DEV_INA219:
+      updateTestScreen();
+      break;
 
-    drawTankScreen(
-      _displayedTank
-    );
-
-  } else {
-
-    drawBatteryScreen(
-      _displayedBattery
-    );
+    default:
+      break;
   }
 }
 
@@ -1486,7 +1623,6 @@ void DisplayManager::drawCurrentScreen() {
 // =====================================================
 
 void DisplayManager::updateData(const DisplayData& data) {
-
   _displayData = data;
   _lastFooterUpdate = millis();
   startAnimation();
@@ -1496,7 +1632,6 @@ void DisplayManager::updateData(const DisplayData& data) {
 }
 
 void DisplayManager::showNotConnected() {
-
   _displayData.valid = false;
   _animationActive = false;
   drawNotConnectedScreen();
@@ -1507,63 +1642,18 @@ void DisplayManager::showWiFiNudge(
   const String& ip,
   const char* statusMsg
 ) {
-
   _displayData.valid = false;
   _animationActive = false;
-  drawWiFiNudgeScreen(
-    ssid,
-    ip,
-    statusMsg
-  );
+  drawWiFiNudgeScreen(ssid, ip, statusMsg);
 }
 
 void DisplayManager::showWiFiConnected(
   const String& ssid,
   const String& ip
 ) {
-
   _displayData.valid = false;
   _animationActive = false;
-  drawWiFiConnectedScreen(
-    ssid,
-    ip
-  );
-}
-
-void DisplayManager::switchPage() {
-
-  // If in config mode or selection mode, do not switch normal page
-  if (_displayMode == DISPLAY_MODE_CONFIG || wifiManager.isConfigModeActive() || _displayMode == DISPLAY_MODE_SELECTION) {
-    return;
-  }
-
-  // If in dev mode, cycle to next dev screen
-  if (_displayMode == DISPLAY_MODE_DEV) {
-    switchTestScreen();
-    drawCurrentScreen();
-    return;
-  }
-
-  // If no battery data is available, do not switch page
-  if (!_displayData.hasBattery) {
-    return;
-  }
-
-  if (
-    _currentPage ==
-    PAGE_TANK
-  ) {
-
-    _currentPage =
-      PAGE_BATTERY;
-
-  } else {
-
-    _currentPage =
-      PAGE_TANK;
-  }
-
-  drawCurrentScreen();
+  drawWiFiConnectedScreen(ssid, ip);
 }
 
 // =====================================================
@@ -1608,9 +1698,9 @@ bool DisplayManager::isChargingAnimationActive() const {
 void DisplayManager::startChargingAnimation() {
   _chargingAnimationActive = true;
   _chargingAnimationStart = millis();
-  _savedPageBeforeAnimation = _currentPage;
-  _savedTestScreenBeforeAnimation = _currentTestScreen;
-  _savedModeBeforeAnimation = _displayMode;
+  _savedSectionBeforeAnimation = _currentSectionId;
+  _savedPageIndexBeforeAnimation = _currentPageIndex;
+  _savedSelectionActiveBeforeAnimation = _selectionScreenActive;
 
   // Turn OLED ON if it was OFF
   if (!_displayAwake) {
@@ -1673,20 +1763,13 @@ void DisplayManager::drawChargingAnimation() {
 
 void DisplayManager::setDevMode(bool active) {
   if (active) {
-    _displayMode = DISPLAY_MODE_DEV;
-    _lastOpenedScreen = DISPLAY_MODE_DEV;
+    setSection(SECTION_DEV, 0);
   } else {
-    if (_displayMode == DISPLAY_MODE_DEV) {
-      _displayMode = DISPLAY_MODE_NORMAL;
-    }
-    if (_lastOpenedScreen == DISPLAY_MODE_DEV) {
-      _lastOpenedScreen = DISPLAY_MODE_NORMAL;
+    if (_currentSectionId == SECTION_DEV) {
+      SectionId target = (_lastOpenedSection == SECTION_DEV) ? DEFAULT_SECTION_ID : _lastOpenedSection;
+      setSection(target, 0);
     }
   }
-}
-
-bool DisplayManager::isDevMode() const {
-  return (_displayMode == DISPLAY_MODE_DEV);
 }
 
 // =====================================================
@@ -1695,73 +1778,57 @@ bool DisplayManager::isDevMode() const {
 
 void DisplayManager::openSelectionScreen() {
   _selectionCount = 0;
-  _availableOptions[_selectionCount++] = SELECT_OPT_TANK;
-  _availableOptions[_selectionCount++] = SELECT_OPT_CONFIG;
-  if (devConfig.get().devModeEnabled) {
-    _availableOptions[_selectionCount++] = SELECT_OPT_DEV;
+  int preselectIdx = -1;
+
+  for (uint8_t i = 0; i < DISPLAY_SECTION_COUNT; i++) {
+    const SectionDef& sec = DISPLAY_SECTIONS[i];
+    if (!displayLayoutConfig.isSectionEnabled(sec.id)) {
+      continue;
+    }
+    if (sec.requiresDevMode && !devConfig.get().devModeEnabled) {
+      continue;
+    }
+    if (sec.id == _currentSectionId) {
+      preselectIdx = _selectionCount;
+    }
+    _availableSectionIds[_selectionCount++] = sec.id;
   }
 
-  // Pre-select based on current active mode
-  if (_displayMode == DISPLAY_MODE_DEV) {
-    _selectionIndex = (_selectionCount > 2) ? 2 : 0;
-  } else if (_displayMode == DISPLAY_MODE_CONFIG || wifiManager.isConfigModeActive()) {
-    _selectionIndex = 1;
-  } else {
-    _selectionIndex = 0;
-  }
-
-  _displayMode = DISPLAY_MODE_SELECTION;
+  _selectionIndex = (preselectIdx >= 0) ? (uint8_t)preselectIdx : 0;
+  _selectionScreenActive = true;
   resetTimeout();
   drawCurrentScreen();
 }
 
 void DisplayManager::closeSelectionScreen() {
-  if (_lastOpenedScreen == DISPLAY_MODE_DEV && !devConfig.get().devModeEnabled) {
-    _lastOpenedScreen = DISPLAY_MODE_NORMAL;
+  const SectionDef* def = getSectionDef(_lastOpenedSection);
+  if (def == nullptr || !displayLayoutConfig.isSectionEnabled(_lastOpenedSection) || (def->requiresDevMode && !devConfig.get().devModeEnabled)) {
+    _lastOpenedSection = DEFAULT_SECTION_ID;
   }
-  _displayMode = _lastOpenedScreen;
+  _currentSectionId = _lastOpenedSection;
+  _selectionScreenActive = false;
   resetTimeout();
   drawCurrentScreen();
 }
 
 void DisplayManager::nextSelectionItem() {
-  if (_displayMode != DISPLAY_MODE_SELECTION || _selectionCount == 0) return;
+  if (!_selectionScreenActive || _selectionCount == 0) return;
   _selectionIndex = (_selectionIndex + 1) % _selectionCount;
   resetTimeout();
   drawCurrentScreen();
 }
 
 void DisplayManager::confirmSelection() {
-  if (_displayMode != DISPLAY_MODE_SELECTION || _selectionCount == 0) return;
+  if (!_selectionScreenActive || _selectionCount == 0) return;
 
-  SelectionOption chosen = _availableOptions[_selectionIndex];
+  SectionId chosen = _availableSectionIds[_selectionIndex];
   Serial.print("[Display] Screen selection confirmed: ");
-
-  if (chosen == SELECT_OPT_TANK) {
-    Serial.println("Tank Data Screen");
-    if (wifiManager.isConfigModeActive()) {
-      wifiManager.exitConfigMode();
-    }
-    _displayMode = DISPLAY_MODE_NORMAL;
-    _lastOpenedScreen = DISPLAY_MODE_NORMAL;
-    _currentPage = PAGE_TANK;
-  } else if (chosen == SELECT_OPT_CONFIG) {
-    Serial.println("Config Screen");
-    _displayMode = DISPLAY_MODE_CONFIG;
-    if (!wifiManager.isConfigModeActive()) {
-      wifiManager.enterConfigMode();
-    }
-  } else if (chosen == SELECT_OPT_DEV) {
-    Serial.println("Dev Screen");
-    if (wifiManager.isConfigModeActive()) {
-      wifiManager.exitConfigMode();
-    }
-    _displayMode = DISPLAY_MODE_DEV;
-    _lastOpenedScreen = DISPLAY_MODE_DEV;
+  const SectionDef* def = getSectionDef(chosen);
+  if (def != nullptr) {
+    Serial.println(def->name);
   }
 
-  resetTimeout();
-  drawCurrentScreen();
+  setSection(chosen, 0);
 }
 
 void DisplayManager::drawSelectionScreen() {
@@ -1775,37 +1842,32 @@ void DisplayManager::drawSelectionScreen() {
   int tw = _display.getStrWidth(title);
   _display.drawStr((_screenW - tw) / 2, 9, title);
 
-  // 2. Menu Items
+  // 2. Dynamic Menu Items
   _display.setFont(u8g2_font_6x10_tr);
 
-  for (uint8_t i = 0; i < _selectionCount; i++) {
-    SelectionOption opt = _availableOptions[i];
-    const char* label = "Unknown";
-    if (opt == SELECT_OPT_TANK) label = "Tank Data Screen";
-    else if (opt == SELECT_OPT_CONFIG) label = "Config Screen";
-    else if (opt == SELECT_OPT_DEV) label = "Dev Screen";
+  int usableH = 53 - 14;
+  int rowH = (_selectionCount > 0) ? min(14, usableH / (int)_selectionCount) : 12;
+  int totalH = rowH * _selectionCount;
+  int startY = 14 + (usableH - totalH) / 2;
 
-    int rowY, rowH;
-    if (_selectionCount == 2) {
-      rowH = 14;
-      rowY = 16 + (i * 18);
-    } else {
-      rowH = 12;
-      rowY = 14 + (i * 13);
-    }
+  for (uint8_t i = 0; i < _selectionCount; i++) {
+    SectionId sid = _availableSectionIds[i];
+    const SectionDef* def = getSectionDef(sid);
+    const char* label = def ? def->name : "Unknown";
+    int rowY = startY + (i * rowH);
 
     if (i == _selectionIndex) {
       // Highlighted selection box
       _display.setDrawColor(1);
       _display.drawRBox(2, rowY, _screenW - 4, rowH, 2);
       _display.setDrawColor(0);
-      char itemBuf[28];
+      char itemBuf[32];
       snprintf(itemBuf, sizeof(itemBuf), "> %s", label);
       _display.drawStr(6, rowY + rowH - 3, itemBuf);
     } else {
       // Unselected item
       _display.setDrawColor(1);
-      char itemBuf[28];
+      char itemBuf[32];
       snprintf(itemBuf, sizeof(itemBuf), "  %s", label);
       _display.drawStr(6, rowY + rowH - 3, itemBuf);
     }
@@ -1832,23 +1894,21 @@ void DisplayManager::handleShortPress() {
     return;
   }
 
+  if (_promptActive) {
+    return; // Don't interrupt prompt
+  }
+
   resetTimeout();
 
-  if (_displayMode == DISPLAY_MODE_SELECTION) {
+  if (_selectionScreenActive) {
     nextSelectionItem();
-  } else if (_displayMode == DISPLAY_MODE_DEV) {
-    switchTestScreen();
-    drawCurrentScreen();
-  } else if (_displayMode == DISPLAY_MODE_CONFIG) {
-    // Config mode stays awake
   } else {
-    // Normal mode: switch between Tank and Battery pages
-    switchPage();
+    nextSectionPage();
   }
 }
 
 void DisplayManager::handleLongPress() {
-  if (isChargingAnimationActive()) {
+  if (isChargingAnimationActive() || _promptActive) {
     return;
   }
 
@@ -1856,21 +1916,19 @@ void DisplayManager::handleLongPress() {
     wakeDisplay();
   }
 
+  // If in config mode and Wi-Fi is not setup yet, block exit/selection screen and prompt user
+  if (!wifiManager.hasConfiguredSSID() && _currentSectionId == SECTION_CONFIG) {
+    showPrompt("Setup Wi-Fi", "to continue");
+    return;
+  }
+
   // If already in selection screen, toggle/close it back to last opened screen
-  if (_displayMode == DISPLAY_MODE_SELECTION) {
+  if (_selectionScreenActive) {
     closeSelectionScreen();
     return;
   }
 
   openSelectionScreen();
-}
-
-void DisplayManager::switchTestScreen() {
-  if (TEST_SCREEN_COUNT > 0) {
-    _currentTestScreen = (TestScreen)((_currentTestScreen + 1) % TEST_SCREEN_COUNT);
-    Serial.print("Test screen navigated to: ");
-    Serial.println((int)_currentTestScreen);
-  }
 }
 
 void DisplayManager::updateTestScreen() {
@@ -1881,28 +1939,29 @@ void DisplayManager::updateTestScreen(const BatteryLedManager& batteryLed) {
   if (!_displayAwake || _chargingAnimationActive) {
     return;
   }
-  switch (_currentTestScreen) {
-    case TEST_SCREEN_INA219:
-    default:
-      drawIna219TestScreen(batteryLed);
-      break;
-  }
+  drawIna219TestScreen(batteryLed);
 }
 
 void DisplayManager::update() {
   unsigned long now = millis();
 
+  // 0. Handle Setup Prompt Dismissal Timer (~2.5s)
+  if (_promptActive) {
+    if (now - _promptStartTime >= 2500) {
+      _promptActive = false;
+      drawCurrentScreen();
+    }
+  }
+
   // 1. Handle Charging Animation if running
   if (_chargingAnimationActive) {
     if (now - _chargingAnimationStart >= CHARGING_ANIMATION_DURATION_MS) {
       _chargingAnimationActive = false;
-      // Restore previously active page & mode
-      _currentPage = _savedPageBeforeAnimation;
-      _currentTestScreen = _savedTestScreenBeforeAnimation;
-      _displayMode = _savedModeBeforeAnimation;
-      // Start fresh 15-second display timeout
+      // Restore previously active section, page, and selection mode
+      _currentSectionId = _savedSectionBeforeAnimation;
+      _currentPageIndex = _savedPageIndexBeforeAnimation;
+      _selectionScreenActive = _savedSelectionActiveBeforeAnimation;
       _lastUiActivityTime = millis();
-      // Redraw restored page
       drawCurrentScreen();
     } else {
       // Redraw animation frame at ~30 FPS (every 33ms)
@@ -1915,34 +1974,25 @@ void DisplayManager::update() {
     return;
   }
 
-  // Handle Configuration Mode rendering & transitions
+  // 2. Handle Configuration Mode external transitions
   bool isConfig = wifiManager.isConfigModeActive();
   if (isConfig != _wasConfigModeActive) {
     _wasConfigModeActive = isConfig;
-    _lastUiActivityTime = now; // Start fresh 15s timer from the moment config mode exits
+    _lastUiActivityTime = now;
     if (!_displayAwake) {
       wakeDisplay();
     }
 
     if (!isConfig) {
-      // Configuration mode exited or timed out (auto-dismissed)
-      // Edge case: config mode auto dismiss will always point to the last opened screen.
-      // If the last opened screen is not present, fallback to tank data screens.
-      if (_lastOpenedScreen == DISPLAY_MODE_DEV) {
-        if (devConfig.get().devModeEnabled) {
-          _displayMode = DISPLAY_MODE_DEV;
-        } else {
-          _displayMode = DISPLAY_MODE_NORMAL;
-          _lastOpenedScreen = DISPLAY_MODE_NORMAL;
-        }
-      } else {
-        _displayMode = DISPLAY_MODE_NORMAL;
+      // Exited config mode: return to last opened non-config section
+      const SectionDef* def = getSectionDef(_lastOpenedSection);
+      if (def == nullptr || !displayLayoutConfig.isSectionEnabled(_lastOpenedSection) || (def->requiresDevMode && !devConfig.get().devModeEnabled)) {
+        _lastOpenedSection = DEFAULT_SECTION_ID;
       }
+      setSection(_lastOpenedSection, 0);
     } else {
-      _displayMode = DISPLAY_MODE_CONFIG;
+      setSection(SECTION_CONFIG, 0);
     }
-
-    drawCurrentScreen();
   }
 
   if (isConfig) {
@@ -1951,25 +2001,15 @@ void DisplayManager::update() {
     if (!_displayAwake) {
       wakeDisplay();
     }
-
-    static unsigned long lastConfigScreenUpdate = 0;
-    if (now - lastConfigScreenUpdate >= 1000) {
-      lastConfigScreenUpdate = now;
-      drawCurrentScreen();
-    }
-    return;
   }
 
-  // 2. Handle UI Inactivity Timeout (Normal Mode)
+  // 3. Handle UI Inactivity Timeout
   _uiTimeoutMs = systemConfig.get().uiTimeoutMs;
   if (_displayAwake) {
-    if (systemConfig.get().autoSleepEnabled && _uiTimeoutMs > 0) {
+    if (systemConfig.get().autoSleepEnabled && _uiTimeoutMs > 0 && !isConfig) {
       if (now - _lastUiActivityTime >= _uiTimeoutMs) {
-        if (_displayMode == DISPLAY_MODE_SELECTION) {
-          if (_lastOpenedScreen == DISPLAY_MODE_DEV && !devConfig.get().devModeEnabled) {
-            _lastOpenedScreen = DISPLAY_MODE_NORMAL;
-          }
-          _displayMode = _lastOpenedScreen;
+        if (_selectionScreenActive) {
+          closeSelectionScreen();
         }
         sleepDisplay();
       }
@@ -1981,35 +2021,49 @@ void DisplayManager::update() {
     return;
   }
 
-  // 3. Screen Rendering
-  if (_displayMode == DISPLAY_MODE_DEV) {
-    // In Dev Mode: update live test screen at ~30 FPS (every 33ms)
-    static unsigned long lastDevScreenUpdate = 0;
-    if (now - lastDevScreenUpdate >= 33) {
-      lastDevScreenUpdate = now;
-      drawCurrentScreen();
-    }
+  // 4. If Selection Screen is active, DO NOT let background section updates overwrite it!
+  if (_selectionScreenActive) {
     return;
   }
 
-  // Normal mode screen rendering / animations
-  updateAnimation();
+  // 5. Update the current section
+  updateSection(_currentSectionId, now);
+}
 
-  if (!_displayData.valid) {
-    // Animate hourglass sand timer when waiting for transmitter
-    if (now - _lastWaitAnimUpdate >= WAIT_ANIM_INTERVAL_MS) {
-      _lastWaitAnimUpdate = now;
+void DisplayManager::updateSection(SectionId secId, unsigned long now) {
+  const SectionDef* def = getSectionDef(secId);
+  if (def == nullptr) return;
+
+  uint16_t interval = def->updateIntervalMs;
+  if (interval == 0) interval = 250;
+
+  if (now - _sectionLastUpdateMs[secId] < interval) {
+    return;
+  }
+  _sectionLastUpdateMs[secId] = now;
+
+  if (secId == SECTION_TANK) {
+    updateAnimation();
+
+    if (!_displayData.valid) {
+      // Animate hourglass sand timer when waiting for transmitter
       _waitAnimAngle += 5.0f;
       if (_waitAnimAngle >= 360.0f) {
         _waitAnimAngle -= 360.0f;
       }
-      drawNotConnectedScreen();
+      drawCurrentScreen();
+    } else if (_animationActive) {
+      drawCurrentScreen();
+    } else if (now - _lastFooterUpdate >= 1000) {
+      // Refresh live "updated ... ago" footer every second
+      _lastFooterUpdate = now;
+      drawCurrentScreen();
     }
-  } else if (_animationActive) {
+  } else if (secId == SECTION_CONFIG) {
     drawCurrentScreen();
-  } else if (now - _lastFooterUpdate >= 1000) {
-    // Refresh live "updated ... ago" footer every second
-    _lastFooterUpdate = now;
+  } else if (secId == SECTION_DEV) {
+    drawCurrentScreen();
+  } else {
     drawCurrentScreen();
   }
 }
@@ -2059,8 +2113,10 @@ void DisplayManager::drawIna219TestScreen(
   _display.setFont(u8g2_font_6x10_tr);
 
   char titleBuf[24];
-  if (TEST_SCREEN_COUNT > 1) {
-    snprintf(titleBuf, sizeof(titleBuf), "DEV INA219 [%d/%d]", (int)_currentTestScreen + 1, (int)TEST_SCREEN_COUNT);
+  const SectionDef* devDef = getSectionDef(SECTION_DEV);
+  uint8_t devPages = devDef ? devDef->pageCount : 1;
+  if (devPages > 1) {
+    snprintf(titleBuf, sizeof(titleBuf), "DEV INA219 [%d/%d]", (int)_currentPageIndex + 1, (int)devPages);
   } else {
     snprintf(titleBuf, sizeof(titleBuf), "DEV: INA219");
   }
@@ -2157,9 +2213,61 @@ void DisplayManager::drawConfigScreen(
 
   // Footer: Countdown timer / hold button to exit
   char footBuf[32];
-  snprintf(footBuf, sizeof(footBuf), "Auto-exit: %lum %02lus", remainingSec / 60, remainingSec % 60);
+  if (!wifiManager.hasConfiguredSSID()) {
+    snprintf(footBuf, sizeof(footBuf), "Setup Wi-Fi to continue");
+  } else {
+    snprintf(footBuf, sizeof(footBuf), "Auto-exit: %lum %02lus", remainingSec / 60, remainingSec % 60);
+  }
   int footWidth = _display.getStrWidth(footBuf);
   _display.drawStr((_screenW - footWidth) / 2, 59, footBuf);
+
+  _display.sendBuffer();
+}
+
+void DisplayManager::showPrompt(const char* line1, const char* line2) {
+  _promptActive = true;
+  _promptStartTime = millis();
+  if (line1) {
+    strncpy(_promptLine1, line1, sizeof(_promptLine1) - 1);
+    _promptLine1[sizeof(_promptLine1) - 1] = '\0';
+  } else {
+    _promptLine1[0] = '\0';
+  }
+  if (line2) {
+    strncpy(_promptLine2, line2, sizeof(_promptLine2) - 1);
+    _promptLine2[sizeof(_promptLine2) - 1] = '\0';
+  } else {
+    _promptLine2[0] = '\0';
+  }
+  resetTimeout();
+  drawCurrentScreen();
+}
+
+void DisplayManager::drawPromptScreen() {
+  _display.clearBuffer();
+
+  // Header: Inverted banner
+  _display.drawBox(0, 0, _screenW, 11);
+  _display.setDrawColor(0);
+  _display.setFont(u8g2_font_6x10_tr);
+  const char* title = "SETUP REQUIRED";
+  int tw = _display.getStrWidth(title);
+  _display.drawStr((_screenW - tw) / 2, 9, title);
+
+  // Body: Rounded container box
+  _display.setDrawColor(1);
+  _display.drawRFrame(4, 15, _screenW - 8, 46, 3);
+
+  // Prompt message lines (centered)
+  _display.setFont(u8g2_font_6x10_tr);
+  if (strlen(_promptLine1) > 0) {
+    int w1 = _display.getStrWidth(_promptLine1);
+    _display.drawStr((_screenW - w1) / 2, 34, _promptLine1);
+  }
+  if (strlen(_promptLine2) > 0) {
+    int w2 = _display.getStrWidth(_promptLine2);
+    _display.drawStr((_screenW - w2) / 2, 48, _promptLine2);
+  }
 
   _display.sendBuffer();
 }

@@ -193,13 +193,15 @@ void WiFiManager::toggleConfigMode() {
 void WiFiManager::update() {
   unsigned long now = millis();
 
-  // 1. Check Configuration Mode Auto-Exit Timeout
+  // 1. Check Configuration Mode Auto-Exit Timeout (only auto-exit if Wi-Fi has been configured)
   if (isConfigModeActive()) {
-    unsigned long timeout = systemConfig.get().configTimeoutMs;
-    if (now - _configModeStartTime >= timeout) {
-      Serial.println("[WiFi] Configuration Mode 5-minute timeout reached. Automatically closing.");
-      exitConfigMode();
-      return;
+    if (hasConfiguredSSID()) {
+      unsigned long timeout = systemConfig.get().configTimeoutMs;
+      if (now - _configModeStartTime >= timeout) {
+        Serial.println("[WiFi] Configuration Mode timeout reached. Automatically closing.");
+        exitConfigMode();
+        return;
+      }
     }
 
     // Handle web server clients and DNS requests
@@ -277,7 +279,7 @@ String WiFiManager::getSSID() const {
 }
 
 unsigned long WiFiManager::getConfigModeRemainingSeconds() const {
-  if (!isConfigModeActive()) return 0;
+  if (!isConfigModeActive() || !hasConfiguredSSID()) return 0;
   unsigned long elapsed = millis() - _configModeStartTime;
   unsigned long total = systemConfig.get().configTimeoutMs;
   if (elapsed >= total) return 0;
@@ -345,6 +347,10 @@ void WiFiManager::handleResetConfig() {
 }
 
 void WiFiManager::handleExitConfig() {
+  if (!hasConfiguredSSID()) {
+    _server.send(400, "application/json", "{\"success\":false,\"error\":\"Please configure and save Wi-Fi before exiting.\"}");
+    return;
+  }
   _server.send(200, "application/json", "{\"success\":true,\"message\":\"Exiting configuration mode.\"}");
   // Allow HTTP response to flush before closing
   delay(100);

@@ -11,6 +11,8 @@
 #include "config/DevConfig.h"
 #include "config/BatteryLedConfig.h"
 #include "config/ConfigJsonHelper.h"
+#include "config/DisplayConfig.h"
+#include "config/DisplayLayoutConfig.h"
 
 #include "models/Telemetry.h"
 #include "models/DisplayData.h"
@@ -35,6 +37,7 @@
 #include "config/LoRaConfig.cpp"
 #include "config/TimeConfig.cpp"
 #include "config/DevConfig.cpp"
+#include "config/DisplayLayoutConfig.cpp"
 #include "config/ConfigJsonHelper.cpp"
 
 #include "protocol/PacketParser.cpp"
@@ -74,6 +77,7 @@ void setup() {
   loraConfigManager.begin();
   timeConfig.begin();
   devConfig.begin();
+  displayLayoutConfig.begin();
 
   // Initialize display
   displayManager.begin();
@@ -103,7 +107,15 @@ void setup() {
   }
 
   // =====================================================
-  // STEP 3: INITIALIZE DATA SOURCE (LORA / MOCK)
+  // STEP 3: INITIAL WI-FI SETUP CHECK
+  // =====================================================
+  if (!wifiManager.hasConfiguredSSID()) {
+    Serial.println("[Boot] Fresh boot: No Wi-Fi configured yet. Entering Initial Setup Config Mode.");
+    displayManager.setSection(SECTION_CONFIG, 0);
+  }
+
+  // =====================================================
+  // STEP 4: INITIALIZE DATA SOURCE (LORA / MOCK)
   // =====================================================
   if (USE_MOCK_DATA) {
     mockDataManager.begin();
@@ -153,8 +165,10 @@ void loop() {
   }
 
   if (packetReceived) {
-    // Both in mock data mode and real LoRa: request Wi-Fi timestamp synchronization
-    wifiManager.requestTimestampSync();
+    // Only request Wi-Fi timestamp synchronization if Wi-Fi is configured
+    if (wifiManager.hasConfiguredSSID()) {
+      wifiManager.requestTimestampSync();
+    }
 
     DisplayData data;
     if (tankProcessor.process(raw, rssi, snr, data)) {

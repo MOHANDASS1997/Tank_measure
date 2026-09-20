@@ -42,6 +42,7 @@ public:
   bool isTimestampSyncActive() const { return (_consumers & CONSUMER_TIMESTAMP) != 0; }
   bool isConnected() const { return (_state == WIFI_STATE_STA_CONNECTED); }
   bool isAPActive() const { return (_state == WIFI_STATE_AP_ACTIVE); }
+  bool hasConfiguredSSID() const { return strlen(wifiConfig.get().ssid) > 0; }
 
   String getIP() const;
   String getSSID() const;

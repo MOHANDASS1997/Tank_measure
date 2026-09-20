@@ -74,6 +74,31 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
 .modal-btns{display:flex;gap:10px;justify-content:center;}
 .toast{position:fixed;top:20px;right:20px;background:var(--surface);border:1px solid var(--accent);color:var(--text);padding:12px 18px;border-radius:10px;box-shadow:0 10px 20px rgba(0,0,0,0.4);font-size:14px;font-weight:600;z-index:1000;display:none;animation:fadeIn 0.3s;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-10px);}to{opacity:1;transform:translateY(0);}}
+.section-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.section-title{font-size:15px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;}
+.lock-badge{font-size:11px;padding:3px 10px;border-radius:999px;font-weight:600;background:rgba(56,189,248,0.12);color:var(--accent);border:1px solid rgba(56,189,248,0.3);}
+.switch{position:relative;display:inline-block;width:44px;height:24px;}
+.switch input{opacity:0;width:0;height:0;}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:var(--border);transition:.25s;border-radius:24px;}
+.slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background-color:#fff;transition:.25s;border-radius:50%;}
+input:checked + .slider{background-color:var(--success);}
+input:checked + .slider:before{transform:translateX(20px);}
+.page-list{display:flex;flex-direction:column;gap:8px;}
+.page-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;transition:border-color 0.15s, box-shadow 0.15s;user-select:none;}
+.page-row.dragging{opacity:0.4;border:1px dashed var(--accent);}
+.page-row.drag-over{border-color:var(--accent);box-shadow:0 0 8px rgba(56,189,248,0.3);}
+.drag-handle{font-size:18px;color:var(--text-dim);cursor:grab;padding:0 4px;line-height:1;}
+.drag-handle:active{cursor:grabbing;}
+.reorder-btns{display:flex;flex-direction:column;gap:1px;}
+.btn-move{background:none;border:none;color:var(--text-dim);font-size:10px;cursor:pointer;padding:1px 4px;border-radius:3px;line-height:1;}
+.btn-move:hover{color:var(--accent);background:var(--card);}
+.page-info{display:flex;align-items:center;gap:8px;flex:1;}
+.page-title{font-size:13px;font-weight:600;color:var(--text);}
+.badge-default{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700;background:rgba(16,185,129,0.2);color:var(--success);border:1px solid rgba(16,185,129,0.4);letter-spacing:0.5px;}
+.badge-locked{font-size:11px;padding:3px 8px;border-radius:4px;font-weight:600;background:rgba(156,163,175,0.12);color:var(--text-dim);border:1px solid var(--border);}
+.page-ctrl{display:flex;align-items:center;gap:8px;}
+.page-chk{width:18px;height:18px;cursor:pointer;accent-color:var(--accent);}
 </style>
 </head>
 <body>
@@ -92,18 +117,35 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
   </header>
 
   <div class="tabs">
-    <button class="tab-btn active" onclick="showTab(0)">📶 Wi-Fi</button>
-    <button class="tab-btn" onclick="showTab(1)">🚰 Tanks</button>
-    <button class="tab-btn" onclick="showTab(2)">📡 Transmitters</button>
-    <button class="tab-btn" onclick="showTab(3)">🔋 Battery & Charge</button>
-    <button class="tab-btn" onclick="showTab(4)">🖥️ System & UI</button>
-    <button class="tab-btn" onclick="showTab(5)">📻 LoRa Radio</button>
-    <button class="tab-btn" onclick="showTab(6)">⏰ Time & NTP</button>
-    <button class="tab-btn" onclick="showTab(7)">🛠️ Dev Mode</button>
+    <button class="tab-btn active" onclick="showTab(0)">🖥️ Display Layout</button>
+    <button class="tab-btn" onclick="showTab(1)">📶 Wi-Fi</button>
+    <button class="tab-btn" onclick="showTab(2)">🚰 Tanks</button>
+    <button class="tab-btn" onclick="showTab(3)">📡 Transmitters</button>
+    <button class="tab-btn" onclick="showTab(4)">🔋 Battery & Charge</button>
+    <button class="tab-btn" onclick="showTab(5)">⚙️ System & UI</button>
+    <button class="tab-btn" onclick="showTab(6)">📻 LoRa Radio</button>
+    <button class="tab-btn" onclick="showTab(7)">⏰ Time & NTP</button>
   </div>
 
-  <!-- PANEL 0: WI-FI -->
+  <!-- PANEL 0: DISPLAY LAYOUT -->
   <div class="panel active" id="p0">
+    <div class="panel-title">
+      <span>Display Layout & Screen Navigation</span>
+    </div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:18px;line-height:1.5;">
+      Configure display sections and screen visibility. Drag handles <b style="color:var(--accent)">☰</b> or use <b style="color:var(--accent)">▲▼</b> to change screen cycle order. The topmost active screen in each section serves as its default screen on load.
+    </div>
+
+    <div id="displayLayoutContainer"></div>
+
+    <div class="panel-actions">
+      <button class="btn-reset" onclick="confirmResetSection('display')">🔄 Reset Layout</button>
+      <button class="btn-main" onclick="saveSection('Display Layout')">💾 Save Display Layout</button>
+    </div>
+  </div>
+
+  <!-- PANEL 1: WI-FI -->
+  <div class="panel" id="p1">
     <div class="panel-title">Wi-Fi Station Settings</div>
     <div class="form-grid">
       <div class="form-group">
@@ -125,8 +167,8 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     </div>
   </div>
 
-  <!-- PANEL 1: TANKS -->
-  <div class="panel" id="p1">
+  <!-- PANEL 2: TANKS -->
+  <div class="panel" id="p2">
     <div class="panel-title">
       <span>Tank Configurations</span>
       <button class="btn-add" onclick="addTankRow()">+ Add Tank</button>
@@ -152,8 +194,8 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     </div>
   </div>
 
-  <!-- PANEL 2: TRANSMITTERS -->
-  <div class="panel" id="p2">
+  <!-- PANEL 3: TRANSMITTERS -->
+  <div class="panel" id="p3">
     <div class="panel-title">
       <span>Transmitter / Node Mapping</span>
       <button class="btn-add" onclick="addTxRow()">+ Add Node</button>
@@ -180,8 +222,8 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     </div>
   </div>
 
-  <!-- PANEL 3: BATTERY & CHARGING -->
-  <div class="panel" id="p3">
+  <!-- PANEL 4: BATTERY & CHARGING -->
+  <div class="panel" id="p4">
     <div class="panel-title">Battery Current & Thresholds</div>
     <div class="form-grid">
       <div class="form-group">
@@ -266,8 +308,8 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     </div>
   </div>
 
-  <!-- PANEL 4: SYSTEM & UI -->
-  <div class="panel" id="p4">
+  <!-- PANEL 5: SYSTEM & UI -->
+  <div class="panel" id="p5">
     <div class="panel-title">Display & Button Timings</div>
     <div class="form-grid">
       <div class="form-group" style="grid-column: 1 / -1; display:flex; flex-direction:row; align-items:center; gap:10px; background:var(--card); padding:12px; border-radius:8px; border:1px solid var(--border);">
@@ -299,8 +341,8 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     </div>
   </div>
 
-  <!-- PANEL 5: LORA -->
-  <div class="panel" id="p5">
+  <!-- PANEL 6: LORA -->
+  <div class="panel" id="p6">
     <div class="panel-title">LoRa RYLR998 Receiver Parameters</div>
     <div class="form-grid">
       <div class="form-group">
@@ -342,8 +384,8 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     </div>
   </div>
 
-  <!-- PANEL 6: TIME -->
-  <div class="panel" id="p6">
+  <!-- PANEL 7: TIME -->
+  <div class="panel" id="p7">
     <div class="panel-title">NTP Time Synchronization</div>
     <div class="form-grid">
       <div class="form-group">
@@ -366,26 +408,6 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
     <div class="panel-actions">
       <button class="btn-reset" onclick="confirmResetSection('time')">🔄 Reset Time</button>
       <button class="btn-main" onclick="saveSection('Time')">💾 Save Time</button>
-    </div>
-  </div>
-
-  <!-- PANEL 7: DEV MODE -->
-  <div class="panel" id="p7">
-    <div class="panel-title">Developer & Diagnostic Mode</div>
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;">
-      <div style="display:flex;align-items:center;gap:12px;">
-        <input type="checkbox" id="dev_mode_enabled" style="width:20px;height:20px;cursor:pointer;" onchange="markDirty(this)">
-        <div>
-          <label for="dev_mode_enabled" style="font-size:14px;color:var(--text);font-weight:600;cursor:pointer;">Enable Dev Mode Entry Point</label>
-          <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">
-            When enabled, adds the Dev diagnostic screen to the on-device selection menu (shown on button long press).
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="panel-actions">
-      <button class="btn-reset" onclick="confirmResetSection('dev')">🔄 Reset Dev Mode</button>
-      <button class="btn-main" onclick="saveSection('Dev Mode')">💾 Save Dev Mode</button>
     </div>
   </div>
 
@@ -440,6 +462,193 @@ function clearDirty(){
 function showTab(idx){
   document.querySelectorAll('.tab-btn').forEach((b,i)=> b.classList.toggle('active', i===idx));
   document.querySelectorAll('.panel').forEach((p,i)=> p.classList.toggle('active', i===idx));
+}
+
+// =====================================================
+//             DISPLAY LAYOUT HELPERS & HANDLERS
+// =====================================================
+let draggedRow = null;
+
+function updateSectionBadges(pageList) {
+  const rows = pageList.querySelectorAll('.page-row');
+  let firstEnabledFound = false;
+  rows.forEach(row => {
+    const chk = row.querySelector('.page-chk');
+    const isChecked = chk ? chk.checked : true;
+    const badgeHolder = row.querySelector('.default-badge-placeholder');
+    if (!firstEnabledFound && isChecked) {
+      badgeHolder.innerHTML = '<span class="badge-default">DEFAULT</span>';
+      firstEnabledFound = true;
+    } else {
+      badgeHolder.innerHTML = '';
+    }
+  });
+}
+
+function onPageToggle(chk) {
+  const pageList = chk.closest('.page-list');
+  if (!chk.checked) {
+    const checkedCount = pageList.querySelectorAll('.page-chk:checked').length;
+    if (checkedCount === 0) {
+      chk.checked = true;
+      showToast("Each section must have at least one active screen!", true);
+      return;
+    }
+  }
+  updateSectionBadges(pageList);
+  markDirty();
+}
+
+function onSectionToggle(toggle, secId) {
+  markDirty();
+}
+
+function movePageRow(btn, dir) {
+  const row = btn.closest('.page-row');
+  const list = row.parentElement;
+  if (dir === -1 && row.previousElementSibling) {
+    list.insertBefore(row, row.previousElementSibling);
+    updateSectionBadges(list);
+    markDirty();
+  } else if (dir === 1 && row.nextElementSibling) {
+    list.insertBefore(row.nextElementSibling, row);
+    updateSectionBadges(list);
+    markDirty();
+  }
+}
+
+function setupDragAndDrop(pageList) {
+  const rows = pageList.querySelectorAll('.page-row');
+  rows.forEach(row => {
+    row.addEventListener('dragstart', (e) => {
+      draggedRow = row;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', row.getAttribute('data-page-id'));
+    });
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      pageList.querySelectorAll('.page-row').forEach(r => r.classList.remove('drag-over'));
+      draggedRow = null;
+    });
+
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (draggedRow && draggedRow !== row && draggedRow.parentNode === pageList) {
+        row.classList.add('drag-over');
+      }
+    });
+
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drag-over');
+    });
+
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      if (draggedRow && draggedRow !== row && draggedRow.parentNode === pageList) {
+        const rect = row.getBoundingClientRect();
+        const next = (e.clientY - rect.top) > (rect.height / 2);
+        pageList.insertBefore(draggedRow, next ? row.nextSibling : row);
+        updateSectionBadges(pageList);
+        markDirty();
+      }
+    });
+  });
+}
+
+function populateDisplayLayout(sections) {
+  const container = document.getElementById('displayLayoutContainer');
+  if (!container || !sections) return;
+  container.innerHTML = '';
+
+  const secIcons = {
+    0: '🚰',
+    1: '⚙️',
+    2: '🛠️'
+  };
+
+  sections.forEach(sec => {
+    const card = document.createElement('div');
+    card.className = 'section-card';
+    card.setAttribute('data-sec-id', sec.id);
+
+    const header = document.createElement('div');
+    header.className = 'section-header';
+
+    const icon = secIcons[sec.id] || '📋';
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'section-title';
+    titleDiv.innerHTML = `<span>${icon}</span><span>${sec.name || 'Section'}</span>`;
+    header.appendChild(titleDiv);
+
+    if (sec.id === 0 || sec.id === 1) {
+      const lockBadge = document.createElement('span');
+      lockBadge.className = 'lock-badge';
+      lockBadge.innerHTML = '🔒 Always Enabled';
+      header.appendChild(lockBadge);
+    } else {
+      const switchLbl = document.createElement('label');
+      switchLbl.className = 'switch';
+      switchLbl.title = 'Toggle Section Availability';
+      switchLbl.innerHTML = `
+        <input type="checkbox" id="sec_toggle_${sec.id}" ${sec.enabled ? 'checked' : ''} onchange="onSectionToggle(this, ${sec.id})">
+        <span class="slider"></span>
+      `;
+      header.appendChild(switchLbl);
+    }
+    card.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'page-list';
+    list.setAttribute('data-sec-id', sec.id);
+
+    if (sec.pages && sec.pages.length > 0) {
+      sec.pages.forEach(pg => {
+        const row = document.createElement('div');
+        row.className = 'page-row';
+        row.setAttribute('draggable', 'true');
+        row.setAttribute('data-page-id', pg.id);
+        row.setAttribute('data-page-name', pg.name || 'Screen');
+
+        let ctrlHtml = '';
+        if (sec.id === 1) {
+          ctrlHtml = `
+            <span class="badge-locked">Locked</span>
+            <input type="checkbox" class="page-chk" checked disabled style="display:none">
+          `;
+        } else {
+          ctrlHtml = `
+            <input type="checkbox" class="page-chk" ${pg.enabled ? 'checked' : ''} onchange="onPageToggle(this)">
+          `;
+        }
+
+        row.innerHTML = `
+          <span class="drag-handle" title="Drag to reorder">☰</span>
+          <div class="reorder-btns">
+            <button type="button" class="btn-move" onclick="movePageRow(this, -1)" title="Move Up">▲</button>
+            <button type="button" class="btn-move" onclick="movePageRow(this, 1)" title="Move Down">▼</button>
+          </div>
+          <div class="page-info">
+            <span class="page-title">${pg.name || 'Screen'}</span>
+            <span class="default-badge-placeholder"></span>
+          </div>
+          <div class="page-ctrl">
+            ${ctrlHtml}
+          </div>
+        `;
+        list.appendChild(row);
+      });
+    }
+
+    card.appendChild(list);
+    container.appendChild(card);
+
+    updateSectionBadges(list);
+    setupDragAndDrop(list);
+  });
 }
 
 function toggleAutoSleepUI(){
@@ -552,9 +761,15 @@ function populateForm(d){
     document.getElementById('time_gmt').value = d.time.gmtOffsetSec;
     document.getElementById('time_daylight').value = d.time.daylightOffsetSec;
   }
-  // Dev Mode
+  // Dev Mode & Display Layout
+  if(d.displayLayout && d.displayLayout.sections){
+    populateDisplayLayout(d.displayLayout.sections);
+  }
   if(d.dev){
-    document.getElementById('dev_mode_enabled').checked = (d.dev.devModeEnabled === true || d.dev.devModeEnabled === 1);
+    const devToggle = document.getElementById('sec_toggle_2');
+    if(devToggle){
+      devToggle.checked = (d.dev.devModeEnabled === true || d.dev.devModeEnabled === 1);
+    }
   }
 }
 
@@ -725,9 +940,33 @@ function collectData(){
       daylightOffsetSec: parseInt(document.getElementById('time_daylight').value)
     },
     dev: {
-      devModeEnabled: document.getElementById('dev_mode_enabled').checked
+      devModeEnabled: (document.getElementById('sec_toggle_2') ? document.getElementById('sec_toggle_2').checked : false)
     }
   };
+
+  // Collect Display Layout
+  payload.displayLayout = { sections: [] };
+  document.querySelectorAll('.page-list').forEach(pList => {
+    const sId = parseInt(pList.getAttribute('data-sec-id'));
+    let secEnabled = true;
+    if (sId === 2) {
+      const devToggle = document.getElementById('sec_toggle_2');
+      secEnabled = devToggle ? devToggle.checked : false;
+      payload.dev.devModeEnabled = secEnabled;
+    }
+    const secObj = {
+      id: sId,
+      enabled: secEnabled,
+      pages: []
+    };
+    pList.querySelectorAll('.page-row').forEach(row => {
+      const pId = parseInt(row.getAttribute('data-page-id'));
+      const chk = row.querySelector('.page-chk');
+      const pEnabled = chk ? chk.checked : true;
+      secObj.pages.push({ id: pId, enabled: pEnabled });
+    });
+    payload.displayLayout.sections.push(secObj);
+  });
 
   // Collect Tanks
   document.querySelectorAll('#tankTable tbody tr').forEach(tr => {
@@ -789,6 +1028,20 @@ function collectData(){
 
 function saveSection(name){
   const payload = collectData();
+
+  // Validate Display Layout constraints
+  if (payload.displayLayout && payload.displayLayout.sections) {
+    for (let s of payload.displayLayout.sections) {
+      if (s.enabled) {
+        const hasActive = s.pages.some(p => p.enabled);
+        if (!hasActive) {
+          showToast("Each active section must have at least one screen enabled!", true);
+          return;
+        }
+      }
+    }
+  }
+
   fetch('/api/config', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -838,15 +1091,24 @@ function exitConfigMode(){
             "The receiver will stop the Web UI and return to normal operation.", 
             ()=>{
     fetch('/api/exit', {method: 'POST'})
-      .then(()=>{
+      .then(r => r.json())
+      .then(res => {
         closeModal();
-        document.body.innerHTML = `
-          <div style="text-align:center;padding:50px;color:#9ca3af;">
-            <h2 style="color:#38bdf8;margin-bottom:12px;">Configuration Mode Closed</h2>
-            <p>The receiver has exited configuration mode and returned to normal monitoring.</p>
-            <p style="margin-top:20px;font-size:13px;">You may close this browser tab.</p>
-          </div>
-        `;
+        if(res.success){
+          document.body.innerHTML = `
+            <div style="text-align:center;padding:50px;color:#9ca3af;">
+              <h2 style="color:#38bdf8;margin-bottom:12px;">Configuration Mode Closed</h2>
+              <p>The receiver has exited configuration mode and returned to normal monitoring.</p>
+              <p style="margin-top:20px;font-size:13px;">You may close this browser tab.</p>
+            </div>
+          `;
+        } else {
+          showToast(res.error || "Cannot exit setup mode yet", true);
+        }
+      })
+      .catch(e => {
+        closeModal();
+        showToast("Error exiting configuration mode", true);
       });
   });
 }

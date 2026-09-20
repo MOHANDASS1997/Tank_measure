@@ -5,16 +5,17 @@
 #include <U8g2lib.h>
 #include "../config/BoardConfig.h"
 #include "../config/LoRaConfig.h"
+#include "../config/DisplayConfig.h"
+#include "../config/DisplayLayoutConfig.h"
 #include "../models/DisplayData.h"
 #include "../time/TimeManager.h"
-
 #include "../config/DevConfig.h"
 
 // Forward declaration
 class BatteryLedManager;
 
 // =====================================================
-//                    PAGE STATE
+//                 BACKWARD COMPATIBILITY ENUMS
 // =====================================================
 
 enum Page {
@@ -22,13 +23,9 @@ enum Page {
   PAGE_BATTERY
 };
 
-// =====================================================
-//                 DISPLAY MODE ENUM
-// =====================================================
-
 enum DisplayMode {
   DISPLAY_MODE_NORMAL,      // Tank / Battery telemetry screens
-  DISPLAY_MODE_SELECTION,   // Selection Menu (Tank Data, Config, Dev)
+  DISPLAY_MODE_SELECTION,   // Selection Menu
   DISPLAY_MODE_CONFIG,      // Config Mode screen
   DISPLAY_MODE_DEV          // Dev diagnostic screens (e.g. INA219)
 };
@@ -39,18 +36,8 @@ enum SelectionOption {
   SELECT_OPT_DEV = 2
 };
 
-// =====================================================
-//                 TEST / DEV SCREEN ENUM
-// =====================================================
-// To add a new test screen in the future:
-// 1. Add an enum value before TEST_SCREEN_COUNT
-// 2. Add a draw<Name>TestScreen() method
-// 3. Add a case in updateTestScreen()
 enum TestScreen {
   TEST_SCREEN_INA219 = 0,
-  // Future test screens:
-  // TEST_SCREEN_LORA,
-  // TEST_SCREEN_WIFI,
   TEST_SCREEN_COUNT
 };
 
@@ -66,11 +53,27 @@ public:
   void update();
   void updateData(const DisplayData& data);
   void showNotConnected();
-  void switchPage();
+  void switchPage() { nextSectionPage(); }
+
+  // Generic Section & Page Navigation
+  SectionId getSection() const { return _currentSectionId; }
+  void setSection(SectionId newSection, uint8_t pageIndex = 0);
+  uint8_t getPageIndex() const { return _currentPageIndex; }
+  void nextSectionPage();
+  bool isPageAvailable(PageId pageId) const;
+
+  const SectionDef* getSectionDef(SectionId id) const;
+  const SectionDef* getCurrentSectionDef() const;
+  PageId getCurrentPageId() const;
 
   // Selection Screen & Navigation
-  DisplayMode getDisplayMode() const { return _displayMode; }
-  bool isSelectionScreenActive() const { return _displayMode == DISPLAY_MODE_SELECTION; }
+  DisplayMode getDisplayMode() const {
+    if (_selectionScreenActive) return DISPLAY_MODE_SELECTION;
+    if (_currentSectionId == SECTION_CONFIG) return DISPLAY_MODE_CONFIG;
+    if (_currentSectionId == SECTION_DEV) return DISPLAY_MODE_DEV;
+    return DISPLAY_MODE_NORMAL;
+  }
+  bool isSelectionScreenActive() const { return _selectionScreenActive; }
   void openSelectionScreen();
   void closeSelectionScreen();
   void nextSelectionItem();
@@ -83,13 +86,13 @@ public:
 
   // Dev / Diagnostic Mode management
   void setDevMode(bool active);
-  bool isDevMode() const;
-  void switchTestScreen();
-  TestScreen getCurrentTestScreen() const;
+  bool isDevMode() const { return (_currentSectionId == SECTION_DEV && !_selectionScreenActive); }
+  void switchTestScreen() { nextSectionPage(); }
+  TestScreen getCurrentTestScreen() const { return (TestScreen)_currentPageIndex; }
   void updateTestScreen();
   void updateTestScreen(const BatteryLedManager& batteryLed);
 
-  // Backward compatibility alias for test mode
+  // Backward compatibility aliases
   void setTestMode(bool active) { setDevMode(active); }
   bool isTestMode() const { return isDevMode(); }
 
@@ -105,7 +108,12 @@ public:
   void checkChargingTransition(bool currentlyCharging);
   void drawChargingAnimation();
 
+  // Generic and Concrete Drawing Methods
   void drawCurrentScreen();
+  void drawSection(SectionId secId);
+  void drawPage(PageId pageId);
+  void updateSection(SectionId secId, unsigned long now);
+
   void drawNotConnectedScreen();
   void drawTankScreen(float tankValue);
   void drawBatteryScreen(float batteryValue);
@@ -114,6 +122,9 @@ public:
   void showWiFiNudge(const String& ssid, const String& ip, const char* statusMsg = "Open IP in browser");
   void showWiFiConnected(const String& ssid, const String& ip);
   void drawConfigScreen(const String& ssid, const String& url, const String& ip, unsigned long remainingSec);
+  void showPrompt(const char* line1, const char* line2 = nullptr);
+  void drawPromptScreen();
+  bool isPromptActive() const { return _promptActive; }
 
   void drawIna219TestScreen(const BatteryLedManager& batteryLed);
   void drawIna219TestScreen(
@@ -136,15 +147,20 @@ private:
   U8G2_SH1106_128X64_NONAME_F_HW_I2C _display;
 
   DisplayData _displayData;
-  Page _currentPage;
-  DisplayMode _displayMode;
-  DisplayMode _lastOpenedScreen;
-  TestScreen _currentTestScreen;
 
-  // Selection Screen state
-  uint8_t _selectionIndex;
-  uint8_t _selectionCount;
-  SelectionOption _availableOptions[3];
+  // Generic Section & Page State
+  SectionId _currentSectionId;
+  SectionId _lastOpenedSection;
+  uint8_t   _currentPageIndex;
+  bool      _selectionScreenActive;
+
+  // Selection Screen State
+  uint8_t   _selectionIndex;
+  uint8_t   _selectionCount;
+  SectionId _availableSectionIds[DISPLAY_SECTION_COUNT];
+
+  // Per-section update timers
+  unsigned long _sectionLastUpdateMs[SECTION_COUNT];
 
   // Power save and UI timeout
   bool _displayAwake;
@@ -154,11 +170,17 @@ private:
   // Charging transition & animation
   bool _chargingAnimationActive;
   unsigned long _chargingAnimationStart;
-  Page _savedPageBeforeAnimation;
-  TestScreen _savedTestScreenBeforeAnimation;
-  DisplayMode _savedModeBeforeAnimation;
+  SectionId _savedSectionBeforeAnimation;
+  uint8_t   _savedPageIndexBeforeAnimation;
+  bool      _savedSelectionActiveBeforeAnimation;
   bool _lastChargingState;
   bool _wasConfigModeActive;
+
+  // Setup prompt popup notification
+  bool          _promptActive;
+  unsigned long _promptStartTime;
+  char          _promptLine1[24];
+  char          _promptLine2[24];
 
   int _screenW;
   int _screenH;
@@ -198,4 +220,3 @@ private:
 };
 
 extern DisplayManager displayManager;
-

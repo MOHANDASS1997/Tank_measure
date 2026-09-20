@@ -201,6 +201,44 @@ String ConfigJsonHelper::serializeAll() {
   out += "  },\n";
   out += "  \"dev\": {\n";
   out += "    \"devModeEnabled\": " + String(dv.devModeEnabled ? "true" : "false") + "\n";
+  out += "  },\n";
+
+  // Display Layout
+  const auto& dl = displayLayoutConfig.get();
+  out += "  \"displayLayout\": {\n";
+  out += "    \"sections\": [\n";
+  for (int s = 0; s < SECTION_COUNT; s++) {
+    const auto& sec = dl.sections[s];
+    const SectionDef* def = nullptr;
+    for (uint8_t d = 0; d < DISPLAY_SECTION_COUNT; d++) {
+      if (DISPLAY_SECTIONS[d].id == sec.sectionId) {
+        def = &DISPLAY_SECTIONS[d];
+        break;
+      }
+    }
+    const char* secName = def ? def->name : "Section";
+    out += "      {\n";
+    out += "        \"id\": " + String(sec.sectionId) + ",\n";
+    out += "        \"name\": \"" + String(secName) + "\",\n";
+    out += "        \"enabled\": " + String(sec.enabled ? "true" : "false") + ",\n";
+    out += "        \"pages\": [\n";
+    for (int p = 0; p < sec.pageCount; p++) {
+      const char* pName = "Page";
+      if (sec.pages[p].pageId == PAGE_TANK_LEVEL) pName = "Tank Level";
+      else if (sec.pages[p].pageId == PAGE_TRANSMITTER_BATTERY) pName = "Transmitter Battery";
+      else if (sec.pages[p].pageId == PAGE_CONFIG_PORTAL) pName = "Config Portal";
+      else if (sec.pages[p].pageId == PAGE_DEV_INA219) pName = "INA219 Diagnostics";
+
+      out += "          {\n";
+      out += "            \"id\": " + String(sec.pages[p].pageId) + ",\n";
+      out += "            \"name\": \"" + String(pName) + "\",\n";
+      out += "            \"enabled\": " + String(sec.pages[p].enabled ? "true" : "false") + "\n";
+      out += "          }" + String((p < sec.pageCount - 1) ? "," : "") + "\n";
+    }
+    out += "        ]\n";
+    out += "      }" + String((s < SECTION_COUNT - 1) ? "," : "") + "\n";
+  }
+  out += "    ]\n";
   out += "  }\n";
 
   out += "}";
@@ -354,7 +392,56 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
     sDev.devModeEnabled = (devStr == "true" || devStr == "1");
   }
 
-  // VALIDATION PHASE: Validate all 8 objects BEFORE saving any
+  // 9. Display Layout
+  DisplayLayoutSettings sDisplay = displayLayoutConfig.get();
+  String layoutBlock = extractSubBlock(json, "displayLayout", '{', '}');
+  if (layoutBlock.length() > 0) {
+    String secArr = extractSubBlock(layoutBlock, "sections", '[', ']');
+    if (secArr.length() > 0) {
+      std::vector<String> sItems;
+      splitArrayObjects(secArr, sItems);
+      for (size_t i = 0; i < sItems.size(); i++) {
+        long sId = extractLong(sItems[i], "id", -1);
+        if (sId >= 0 && sId < SECTION_COUNT) {
+          for (int s = 0; s < SECTION_COUNT; s++) {
+            if (sDisplay.sections[s].sectionId == (SectionId)sId) {
+              if ((SectionId)sId == SECTION_DEV) {
+                String enStr = extractString(sItems[i], "enabled", sDisplay.sections[s].enabled ? "true" : "false");
+                sDisplay.sections[s].enabled = (enStr == "true" || enStr == "1");
+                sDev.devModeEnabled = sDisplay.sections[s].enabled;
+              } else {
+                sDisplay.sections[s].enabled = true; // Tank and Config are always enabled
+              }
+
+              String pArr = extractSubBlock(sItems[i], "pages", '[', ']');
+              if (pArr.length() > 0) {
+                std::vector<String> pItems;
+                splitArrayObjects(pArr, pItems);
+                if (pItems.size() > 0 && pItems.size() <= 4) {
+                  sDisplay.sections[s].pageCount = pItems.size();
+                  for (size_t p = 0; p < pItems.size(); p++) {
+                    sDisplay.sections[s].pages[p].pageId = (PageId)extractLong(pItems[p], "id", 0);
+                    String penStr = extractString(pItems[p], "enabled", "true");
+                    sDisplay.sections[s].pages[p].enabled = (penStr == "true" || penStr == "1");
+                  }
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+  } else if (devBlock.length() > 0) {
+    // If only devBlock was submitted, synchronize dev section
+    for (int s = 0; s < SECTION_COUNT; s++) {
+      if (sDisplay.sections[s].sectionId == SECTION_DEV) {
+        sDisplay.sections[s].enabled = sDev.devModeEnabled;
+      }
+    }
+  }
+
+  // VALIDATION PHASE: Validate all 9 objects BEFORE saving any
   if (!wifiConfig.validate(sWifi, outError)) return false;
   if (!tankConfig.validate(sTank, outError)) return false;
   if (!transmitterConfig.validate(sTx, outError)) return false;
@@ -363,6 +450,7 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
   if (!loraConfigManager.validate(sLoRa, outError)) return false;
   if (!timeConfig.validate(sTime, outError)) return false;
   if (!devConfig.validate(sDev, outError)) return false;
+  if (!displayLayoutConfig.validate(sDisplay, outError)) return false;
 
   // COMMIT PHASE: Atomically apply and save to NVS
   wifiConfig.set(sWifi);
@@ -389,7 +477,10 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
   devConfig.set(sDev);
   devConfig.save();
 
-  Serial.println("[Config] All 8 configuration objects updated and persisted successfully.");
+  displayLayoutConfig.set(sDisplay);
+  displayLayoutConfig.save();
+
+  Serial.println("[Config] All 9 configuration objects updated and persisted successfully.");
   return true;
 }
 
@@ -418,7 +509,10 @@ bool ConfigJsonHelper::resetAllToDefaults(String& outError) {
   devConfig.loadDefaults();
   devConfig.save();
 
-  Serial.println("[Config] All 8 configuration objects restored to factory defaults.");
+  displayLayoutConfig.loadDefaults();
+  displayLayoutConfig.save();
+
+  Serial.println("[Config] All 9 configuration objects restored to factory defaults.");
   return true;
 }
 
@@ -458,9 +552,26 @@ bool ConfigJsonHelper::resetSection(const String& section, String& outError) {
     timeConfig.save();
     Serial.println("[Config] Time settings reset to factory defaults.");
     return true;
+  } else if (section == "display") {
+    displayLayoutConfig.loadDefaults();
+    displayLayoutConfig.save();
+    DevSettings sd = devConfig.get();
+    sd.devModeEnabled = false;
+    devConfig.set(sd);
+    devConfig.save();
+    Serial.println("[Config] Display layout settings reset to factory defaults.");
+    return true;
   } else if (section == "dev") {
     devConfig.loadDefaults();
     devConfig.save();
+    DisplayLayoutSettings dl = displayLayoutConfig.get();
+    for (int s = 0; s < SECTION_COUNT; s++) {
+      if (dl.sections[s].sectionId == SECTION_DEV) {
+        dl.sections[s].enabled = false;
+      }
+    }
+    displayLayoutConfig.set(dl);
+    displayLayoutConfig.save();
     Serial.println("[Config] Dev Mode settings reset to factory defaults.");
     return true;
   } else if (section == "all" || section.length() == 0) {
