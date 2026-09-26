@@ -53,6 +53,9 @@ td input{width:100%;padding:6px 8px;font-size:13px;}
 .btn-del:hover{background:var(--danger-hover);}
 .btn-add{background:var(--card);border:1px dashed var(--accent);color:var(--accent);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:10px;transition:all 0.2s;}
 .btn-add:hover{background:rgba(56,189,248,0.1);}
+.sched-table{border-collapse:collapse;font-size:11px;width:100%;min-width:200px;}
+.sched-table th,.sched-table td{padding:3px 5px;border:1px solid rgba(255,255,255,0.08);text-align:center;}
+.sched-table input{width:52px;padding:3px;font-size:11px;}
 .panel-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);}
 .actions{position:sticky;bottom:16px;background:rgba(17,24,39,0.95);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:14px;padding:16px 20px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;box-shadow:0 10px 25px rgba(0,0,0,0.5);}
 .left-actions, .right-actions{display:flex;flex-wrap:wrap;gap:10px;}
@@ -205,6 +208,9 @@ input:checked + .slider:before{transform:translateX(20px);}
             <th>Sensor Max (cm)</th>
             <th>Battery Full (V)</th>
             <th>Battery Empty (V)</th>
+            <th>Samples / Wake</th>
+            <th>Sample Interval (ms)</th>
+            <th>Wake Schedule</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -804,9 +810,45 @@ function delTankRow(btn){
   markDirty();
 }
 
+function createScheduleRow(sl) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="number" min="0" max="23" class="sl_start" value="${sl.startHour}" oninput="markDirty(this)"></td>
+    <td><input type="number" min="0" max="23" class="sl_end" value="${sl.endHour}" oninput="markDirty(this)"></td>
+    <td><input type="number" min="5" class="sl_wake" value="${sl.wakeSec}" oninput="markDirty(this)"></td>
+    <td><button class="btn-del" onclick="delScheduleRow(this)">✕</button></td>
+  `;
+  return tr;
+}
+
+function addScheduleRow(btn) {
+  const tbody = btn.closest('td').querySelector('.sched-body');
+  if (tbody.children.length >= 6) { showToast('Max 6 schedule slots', true); return; }
+  tbody.appendChild(createScheduleRow({startHour:0, endHour:8, wakeSec:3600}));
+  markDirty();
+}
+
+function delScheduleRow(btn) {
+  const tbody = btn.closest('tbody');
+  if (tbody.children.length <= 1) { showToast('At least 1 schedule slot required', true); return; }
+  btn.closest('tr').remove();
+  markDirty();
+}
+
 // Transmitters Row Helpers
 function createTxRow(tx, i){
+  const slots = (tx.scheduleSlots && tx.scheduleSlots.length > 0)
+    ? tx.scheduleSlots
+    : [{startHour:6,endHour:8,wakeSec:600},{startHour:8,endHour:18,wakeSec:1800},{startHour:18,endHour:6,wakeSec:3600}];
+  const slotRows = slots.map(s => `
+    <tr>
+      <td><input type="number" min="0" max="23" class="sl_start" value="${s.startHour}" oninput="markDirty(this)"></td>
+      <td><input type="number" min="0" max="23" class="sl_end" value="${s.endHour}" oninput="markDirty(this)"></td>
+      <td><input type="number" min="5" class="sl_wake" value="${s.wakeSec}" oninput="markDirty(this)"></td>
+      <td><button class="btn-del" onclick="delScheduleRow(this)">✕</button></td>
+    </tr>`).join('');
   const tr = document.createElement('tr');
+  tr.className = 'tx-node-row';
   tr.innerHTML = `
     <td><input type="number" class="tx_addr" value="${tx.transmitterAddress||3201}" oninput="markDirty(this)"></td>
     <td><input type="text" class="tx_tank" value="${tx.tankId||'tank_1'}" oninput="markDirty(this)"></td>
@@ -814,6 +856,15 @@ function createTxRow(tx, i){
     <td><input type="number" step="0.5" class="tx_smax" value="${tx.sensorMaxDistanceCm}" oninput="markDirty(this)"></td>
     <td><input type="number" step="0.05" class="tx_bfull" value="${tx.batteryFullVoltage}" oninput="markDirty(this)"></td>
     <td><input type="number" step="0.05" class="tx_bempty" value="${tx.batteryEmptyVoltage}" oninput="markDirty(this)"></td>
+    <td><input type="number" min="1" max="20" class="tx_sps" value="${tx.samplesPerWake||5}" oninput="markDirty(this)"></td>
+    <td><input type="number" min="10" max="5000" class="tx_sim" value="${tx.samplingIntervalMs||30}" oninput="markDirty(this)"></td>
+    <td>
+      <table class="sched-table">
+        <thead><tr><th>From</th><th>To</th><th>Every (s)</th><th></th></tr></thead>
+        <tbody class="sched-body">${slotRows}</tbody>
+      </table>
+      <button class="btn-add" style="margin-top:4px;font-size:11px" onclick="addScheduleRow(this)">+ Slot</button>
+    </td>
     <td><button class="btn-del" onclick="delTxRow(this)">Delete</button></td>
   `;
   return tr;
@@ -826,7 +877,17 @@ function addTxRow(){
     return;
   }
   const idx = txBody.children.length + 1;
-  const tx = {transmitterAddress:3200+idx, tankId:'tank_1', sensorMinDistanceCm:25, sensorMaxDistanceCm:400, batteryFullVoltage:4.20, batteryEmptyVoltage:3.20};
+  const tx = {
+    transmitterAddress: 3200+idx,
+    tankId: 'tank_1',
+    sensorMinDistanceCm: 25,
+    sensorMaxDistanceCm: 400,
+    batteryFullVoltage: 4.20,
+    batteryEmptyVoltage: 3.20,
+    samplesPerWake: 5,
+    samplingIntervalMs: 30,
+    scheduleSlots: [{startHour:6,endHour:8,wakeSec:600},{startHour:8,endHour:18,wakeSec:1800},{startHour:18,endHour:6,wakeSec:3600}]
+  };
   txBody.appendChild(createTxRow(tx, idx-1));
   markDirty();
 }
@@ -976,14 +1037,33 @@ function collectData(){
   payload.tanks.count = payload.tanks.tanks.length;
 
   // Collect Transmitters
-  document.querySelectorAll('#txTable tbody tr').forEach(tr => {
+  document.querySelectorAll('#txTable > tbody > tr.tx-node-row').forEach(tr => {
+    const addrEl = tr.querySelector('.tx_addr');
+    if (!addrEl) return;
+    const slots = [];
+    tr.querySelectorAll('.sched-body tr').forEach(sr => {
+      const shEl = sr.querySelector('.sl_start');
+      const ehEl = sr.querySelector('.sl_end');
+      const wsEl = sr.querySelector('.sl_wake');
+      if (shEl && ehEl && wsEl) {
+        slots.push({
+          startHour: parseInt(shEl.value) || 0,
+          endHour:   parseInt(ehEl.value) || 0,
+          wakeSec:   parseInt(wsEl.value) || 3600
+        });
+      }
+    });
     payload.transmitters.transmitters.push({
-      transmitterAddress: parseInt(tr.querySelector('.tx_addr').value),
-      tankId: tr.querySelector('.tx_tank').value.trim(),
+      transmitterAddress:  parseInt(addrEl.value) || 3201,
+      tankId:              tr.querySelector('.tx_tank') ? tr.querySelector('.tx_tank').value.trim() : 'tank_1',
       sensorMinDistanceCm: parseFloat(tr.querySelector('.tx_smin').value),
       sensorMaxDistanceCm: parseFloat(tr.querySelector('.tx_smax').value),
-      batteryFullVoltage: parseFloat(tr.querySelector('.tx_bfull').value),
-      batteryEmptyVoltage: parseFloat(tr.querySelector('.tx_bempty').value)
+      batteryFullVoltage:  parseFloat(tr.querySelector('.tx_bfull').value),
+      batteryEmptyVoltage: parseFloat(tr.querySelector('.tx_bempty').value),
+      samplesPerWake:      parseInt(tr.querySelector('.tx_sps').value) || 5,
+      samplingIntervalMs:  parseInt(tr.querySelector('.tx_sim').value) || 30,
+      scheduleSlotCount:   slots.length,
+      scheduleSlots:       slots
     });
   });
   payload.transmitters.count = payload.transmitters.transmitters.length;

@@ -1,5 +1,9 @@
 #include "PacketParser.h"
 
+static bool isNullOrEmpty(const String &val) {
+  return (val.length() == 0 || val.equalsIgnoreCase("null") || val.equalsIgnoreCase("nan"));
+}
+
 // =====================================================
 // =====================================================
 //              APPLICATION PACKET PARSER
@@ -41,6 +45,15 @@ bool parseApplicationPacket(
   result.chargingFound =
     false;
 
+  result.wdsFound =
+    false;
+
+  result.spsFound =
+    false;
+
+  result.simFound =
+    false;
+
   result.version =
     0;
 
@@ -55,6 +68,15 @@ bool parseApplicationPacket(
 
   result.charging =
     false;
+
+  result.wakeDurationSec =
+    0;
+
+  result.samplesPerWake =
+    0;
+
+  result.samplingIntervalMs =
+    0;
 
   int start =
     0;
@@ -228,11 +250,16 @@ bool parseApplicationPacket(
       packetConfig.distance.enabled
     ) {
 
-      result.distanceFound =
-        true;
+      if (!isNullOrEmpty(value)) {
+        result.distanceFound =
+          true;
 
-      result.distanceCm =
-        value.toFloat();
+        result.distanceCm =
+          value.toFloat();
+      } else {
+        result.distanceFound =
+          false;
+      }
     }
 
     // =================================================
@@ -244,11 +271,16 @@ bool parseApplicationPacket(
       packetConfig.batteryVoltage.enabled
     ) {
 
-      result.batteryFound =
-        true;
+      if (!isNullOrEmpty(value)) {
+        result.batteryFound =
+          true;
 
-      result.batteryVoltage =
-        value.toFloat();
+        result.batteryVoltage =
+          value.toFloat();
+      } else {
+        result.batteryFound =
+          false;
+      }
     }
 
     // =================================================
@@ -265,6 +297,45 @@ bool parseApplicationPacket(
 
       result.charging =
         value.toInt() != 0;
+    }
+
+    // =================================================
+    // WAKE DURATION (optional)
+    // =================================================
+
+    else if (key == "wds") {
+
+      result.wdsFound =
+        true;
+
+      result.wakeDurationSec =
+        (uint16_t)value.toInt();
+    }
+
+    // =================================================
+    // SAMPLES PER WAKE (optional)
+    // =================================================
+
+    else if (key == "sps") {
+
+      result.spsFound =
+        true;
+
+      result.samplesPerWake =
+        (uint8_t)value.toInt();
+    }
+
+    // =================================================
+    // SAMPLING INTERVAL MS (optional)
+    // =================================================
+
+    else if (key == "sim") {
+
+      result.simFound =
+        true;
+
+      result.samplingIntervalMs =
+        (uint16_t)value.toInt();
     }
 
     // =================================================
@@ -352,12 +423,12 @@ bool parseApplicationPacket(
   // ===================================================
 
   if (
-    result.distanceFound &&
+    !result.distanceFound ||
     result.distanceCm < 0.0
   ) {
 
     Serial.println(
-      "Packet rejected: invalid distance"
+      "Packet rejected: distance missing, null, or negative"
     );
 
     return false;
@@ -365,11 +436,11 @@ bool parseApplicationPacket(
 
   if (
     result.batteryFound &&
-    result.batteryVoltage <= 0.0
+    result.batteryVoltage < 0.0
   ) {
 
     Serial.println(
-      "Packet rejected: invalid battery voltage"
+      "Packet rejected: battery voltage is negative"
     );
 
     return false;

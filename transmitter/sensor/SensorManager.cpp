@@ -32,17 +32,17 @@ float SensorManager::measureSingleDistanceCm() {
   return (float)duration / sensorConfig.speedOfSoundDivisor;
 }
 
-float SensorManager::measureFilteredDistanceCm() {
-  float readings[sensorConfig.samplesCount];
+float SensorManager::measureFilteredDistanceCm(int samplesCount, int intervalMs) {
+  float readings[samplesCount];
   int validCount = 0;
 
-  for (int i = 0; i < sensorConfig.samplesCount; i++) {
+  for (int i = 0; i < samplesCount; i++) {
     float dist = measureSingleDistanceCm();
     if (dist > 0.0f) {
       readings[validCount++] = dist;
     }
-    if (i < sensorConfig.samplesCount - 1) {
-      delay(sensorConfig.sampleIntervalMs);
+    if (i < samplesCount - 1) {
+      delay(intervalMs);
     }
   }
 

@@ -70,6 +70,9 @@ void setup() {
   Serial.println("================================");
 
   // Initialize 8 distinct persistent configuration objects
+  // Note: transmitterConfig migration runs first to handle struct layout changes
+  // before BaseConfigManager::begin() attempts to read the stored blob.
+  transmitterConfig.migrateFromV1IfNeeded();
   systemConfig.begin();
   wifiConfig.begin();
   tankConfig.begin();

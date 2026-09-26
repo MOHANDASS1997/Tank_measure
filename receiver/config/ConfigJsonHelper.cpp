@@ -141,7 +141,19 @@ String ConfigJsonHelper::serializeAll() {
     out += "        \"sensorMinDistanceCm\": " + String(tx.transmitters[i].sensorMinDistanceCm, 2) + ",\n";
     out += "        \"sensorMaxDistanceCm\": " + String(tx.transmitters[i].sensorMaxDistanceCm, 2) + ",\n";
     out += "        \"batteryFullVoltage\": " + String(tx.transmitters[i].batteryFullVoltage, 2) + ",\n";
-    out += "        \"batteryEmptyVoltage\": " + String(tx.transmitters[i].batteryEmptyVoltage, 2) + "\n";
+    out += "        \"batteryEmptyVoltage\": " + String(tx.transmitters[i].batteryEmptyVoltage, 2) + ",\n";
+    out += "        \"samplesPerWake\": " + String(tx.transmitters[i].samplesPerWake) + ",\n";
+    out += "        \"samplingIntervalMs\": " + String(tx.transmitters[i].samplingIntervalMs) + ",\n";
+    out += "        \"scheduleSlotCount\": " + String(tx.transmitters[i].scheduleSlotCount) + ",\n";
+    out += "        \"scheduleSlots\": [\n";
+    for (uint8_t s = 0; s < tx.transmitters[i].scheduleSlotCount; s++) {
+      const WakeScheduleSlot& sl = tx.transmitters[i].scheduleSlots[s];
+      out += "          {\"startHour\": " + String(sl.startHour) +
+             ", \"endHour\": " + String(sl.endHour) +
+             ", \"wakeSec\": " + String(sl.wakeSec) + "}";
+      out += (s < tx.transmitters[i].scheduleSlotCount - 1) ? ",\n" : "\n";
+    }
+    out += "        ]\n";
     out += "      }" + String(i < tx.count - 1 ? "," : "") + "\n";
   }
   out += "    ]\n";
@@ -301,8 +313,35 @@ bool ConfigJsonHelper::deserializeAndSave(const String& json, String& outError) 
         sTx.transmitters[i].tankId[sizeof(sTx.transmitters[i].tankId) - 1] = '\0';
         sTx.transmitters[i].sensorMinDistanceCm = extractFloat(items[i], "sensorMinDistanceCm", 25.0f);
         sTx.transmitters[i].sensorMaxDistanceCm = extractFloat(items[i], "sensorMaxDistanceCm", 400.0f);
-        sTx.transmitters[i].batteryFullVoltage = extractFloat(items[i], "batteryFullVoltage", 4.20f);
+        sTx.transmitters[i].batteryFullVoltage  = extractFloat(items[i], "batteryFullVoltage", 4.20f);
         sTx.transmitters[i].batteryEmptyVoltage = extractFloat(items[i], "batteryEmptyVoltage", 3.20f);
+        sTx.transmitters[i].samplesPerWake     = (uint8_t) extractLong(items[i], "samplesPerWake",  5);
+        sTx.transmitters[i].samplingIntervalMs = (uint16_t)extractLong(items[i], "samplingIntervalMs", 30);
+
+        // Parse scheduleSlots array
+        String slotsArr = extractSubBlock(items[i], "scheduleSlots", '[', ']');
+        if (slotsArr.length() > 0) {
+          std::vector<String> slotItems;
+          splitArrayObjects(slotsArr, slotItems);
+          uint8_t slotCount = 0;
+          for (size_t si = 0; si < slotItems.size() && si < MAX_WAKE_SLOTS; si++) {
+            uint8_t  sh  = (uint8_t) extractLong(slotItems[si], "startHour", 0);
+            uint8_t  eh  = (uint8_t) extractLong(slotItems[si], "endHour",   0);
+            uint16_t ws  = (uint16_t)extractLong(slotItems[si], "wakeSec",   3600);
+            sTx.transmitters[i].scheduleSlots[si] = { sh, eh, ws };
+            slotCount++;
+          }
+          sTx.transmitters[i].scheduleSlotCount = slotCount > 0 ? slotCount : 1;
+        } else {
+          // No schedule provided — keep defaults (set by loadDefaults / migration)
+          // We only set slotCount here if it's 0 (safety)
+          if (sTx.transmitters[i].scheduleSlotCount == 0) {
+            sTx.transmitters[i].scheduleSlotCount = 3;
+            sTx.transmitters[i].scheduleSlots[0] = { 6,  8,  600  };
+            sTx.transmitters[i].scheduleSlots[1] = { 8,  18, 1800 };
+            sTx.transmitters[i].scheduleSlots[2] = { 18, 6,  3600 };
+          }
+        }
       }
     }
   }

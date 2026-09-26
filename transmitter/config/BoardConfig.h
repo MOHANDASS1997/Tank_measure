@@ -35,3 +35,11 @@
   30 // Delay interval when ENABLE_DEEP_SLEEP is false (1 minute)
 #define DEEP_SLEEP_SECONDS                                                     \
   60 // Deep sleep duration when ENABLE_DEEP_SLEEP is true (1 minute)
+
+// =====================================================
+//   RECEIVER-CONTROLLED OPERATIONAL DEFAULTS (NVS)
+//   Used on first boot before any SET_CONFIG is received.
+// =====================================================
+#define DEFAULT_WAKE_DURATION_SEC    60  // seconds
+#define DEFAULT_SAMPLES_PER_WAKE      5  // median filter samples
+#define DEFAULT_SAMPLING_INTERVAL_MS 30  // ms between samples

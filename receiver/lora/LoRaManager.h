@@ -4,6 +4,7 @@
 #include <HardwareSerial.h>
 #include "../config/BoardConfig.h"
 #include "../config/LoRaConfig.h"
+#include "../config/TransmitterConfig.h"
 #include "../models/Telemetry.h"
 #include "../protocol/PacketParser.h"
 #include "../display/DisplayManager.h"

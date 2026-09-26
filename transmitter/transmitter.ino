@@ -6,6 +6,7 @@
 #include "config/BoardConfig.h"
 #include "config/SensorConfig.h"
 #include "config/TransmitterConfig.h"
+#include "config/TxOpConfig.h"
 
 #include "battery/BatteryManager.h"
 #include "lora/TransmitterLoRaManager.h"
@@ -14,6 +15,7 @@
 
 // Explicit .cpp includes for Arduino IDE multi-directory support
 #include "battery/BatteryManager.cpp"
+#include "config/TxOpConfig.cpp"
 #include "lora/TransmitterLoRaManager.cpp"
 #include "sensor/SensorManager.cpp"
 #include "sleep/SleepManager.cpp"
@@ -24,9 +26,14 @@
 
 void processAndTransmit() {
   // 1. Measure Ultrasonic Distance (with multi-sample filtering)
+  // Use receiver-controlled samplesPerWake and samplingIntervalMs from TxOpConfig.
   Serial.println("\n--- Starting Measurement Cycle ---");
   Serial.println("Reading ultrasonic distance...");
-  float distanceCm = sensorManager.measureFilteredDistanceCm();
+  const TxOpSettings& op = txOpConfig.get();
+  float distanceCm = sensorManager.measureFilteredDistanceCm(
+    op.samplesPerWake,
+    op.samplingIntervalMs
+  );
 
   if (distanceCm < 0.0f) {
     Serial.println("Warning: Ultrasonic echo timeout / no echo detected.");
@@ -60,6 +67,11 @@ void processAndTransmit() {
   if (distanceCm > 0.0f) {
     transmitterLoRaManager.sendTelemetry(sequence, distanceCm, batteryVoltage,
                                          isCharging);
+
+    // 6. Listen up to 2 seconds for a SET_CONFIG or ACK reply.
+    // Exits as soon as any response arrives (battery-friendly).
+    // If no response: continue with existing NVS config values.
+    transmitterLoRaManager.listenForConfigResponse(2000);
   } else {
     Serial.println("Skipping transmission due to invalid sensor reading.");
   }
@@ -81,12 +93,15 @@ void setup() {
   // 1. Initialize Sleep / RTC State
   sleepManager.begin();
 
-  // 2. Initialize Hardware Subsystems
+  // 2. Load receiver-controlled operational config from NVS
+  txOpConfig.begin();
+
+  // 3. Initialize Hardware Subsystems
   sensorManager.begin();
   batteryManager.begin();
   transmitterLoRaManager.begin();
 
-  // 3. Configure LoRa Module on first boot
+  // 4. Configure LoRa Module on first boot
   if (sleepManager.getBootCount() == 1 || !ENABLE_DEEP_SLEEP) {
     transmitterLoRaManager.configure();
   }
@@ -95,8 +110,8 @@ void setup() {
     Serial.println("Mode: DEEP SLEEP (Production)");
     processAndTransmit();
 
-    // Enter Deep Sleep for configured duration
-    sleepManager.goToDeepSleep(DEEP_SLEEP_SECONDS);
+    // Enter Deep Sleep using receiver-controlled wake duration
+    sleepManager.goToDeepSleep(txOpConfig.get().wakeDurationSec);
   } else {
     Serial.println("Mode: DELAY LOOP (Testing / Continuous Serial Debugging)");
     // Run first transmission cycle immediately

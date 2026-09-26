@@ -14,7 +14,7 @@ public:
 
   void begin();
   float measureSingleDistanceCm();
-  float measureFilteredDistanceCm();
+  float measureFilteredDistanceCm(int samplesCount, int intervalMs);
 
 private:
   void triggerPulse();

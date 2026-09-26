@@ -293,7 +293,17 @@ unsigned long WiFiManager::getConfigModeRemainingSeconds() const {
 void WiFiManager::handleRoot() {
   _configModeStartTime = millis(); // Reset inactivity timer on UI interactions
   _server.sendHeader("Content-Encoding", "gzip");
-  _server.send_P(200, "text/html", (const char*)WEB_PORTAL_HTML_GZ, sizeof(WEB_PORTAL_HTML_GZ));
+  _server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  _server.send(200, "text/html", "");
+
+  size_t total = sizeof(WEB_PORTAL_HTML_GZ);
+  for (size_t offset = 0; offset < total; offset += 1024) {
+    size_t chunk = min((size_t)1024, total - offset);
+    _server.sendContent_P((const char*)(WEB_PORTAL_HTML_GZ + offset), chunk);
+    yield();
+  }
+  _server.sendContent(""); // Terminating HTTP chunk
 }
 
 void WiFiManager::handleGetConfig() {

@@ -1,4 +1,6 @@
 #include "LoRaManager.h"
+#include "../time/TimeManager.h"
+#include "../config/TimeConfig.h"
 
 // Instantiate global LoRaManager
 LoRaManager loraManager;
@@ -288,19 +290,86 @@ bool LoRaManager::parseLoRaReceive(
 
   ParsedPacket parsed;
 
-  if (
-    !parseApplicationPacket(
-      applicationData,
-      sourceAddress,
-      parsed
-    )
-  ) {
+  bool packetValid = parseApplicationPacket(
+    applicationData,
+    sourceAddress,
+    parsed
+  );
 
+  // ---------------------------------------------------
+  // Reply to transmitter: SET_CONFIG (mismatch) or +ACK (in-sync / fallback)
+  //
+  // MUST ALWAYS RUN — even if packetValid is false!
+  // The acknowledgement payload is independent of whether the
+  // packet telemetry was accepted or rejected.
+  // If there is a mismatch between the reported sleep duration / sampling
+  // and the calculated values, send SET_CONFIG with the correct values.
+  // Otherwise, send pure +ACK.
+  // ---------------------------------------------------
+
+  TransmitterConfig txCfg;
+  bool cfgFound = transmitterConfig.findTransmitter(sourceAddress, txCfg);
+
+  if (cfgFound && parsed.wdsFound && parsed.spsFound && parsed.simFound) {
+    // Resolve the correct wake duration for the current local time
+    uint8_t localHour = 0;
+    uint32_t epoch = timeManager.getEpoch();
+    if (epoch > 0) {
+      long offsetSec = timeConfig.get().gmtOffsetSec;
+      localHour = (uint8_t)(((epoch + (uint32_t)offsetSec) % 86400UL) / 3600UL);
+    }
+    uint16_t expectedWakeSec = transmitterConfig.getEffectiveWakeSec(sourceAddress, localHour);
+
+    bool mismatch =
+      (parsed.wakeDurationSec    != expectedWakeSec)           ||
+      (parsed.samplesPerWake     != txCfg.samplesPerWake)      ||
+      (parsed.samplingIntervalMs != txCfg.samplingIntervalMs);
+
+    if (mismatch) {
+      Serial.printf("[LoRa] Config mismatch for %d (packetValid=%d): reported wds=%u sps=%u sim=%u / "
+                    "expected wds=%u sps=%u sim=%u. Sending SET_CONFIG.\n",
+                    sourceAddress, (int)packetValid,
+                    parsed.wakeDurationSec, parsed.samplesPerWake, parsed.samplingIntervalMs,
+                    expectedWakeSec, txCfg.samplesPerWake, txCfg.samplingIntervalMs);
+
+      String msg = "SET_CONFIG\n" +
+                   String(expectedWakeSec)          + "\n" +
+                   String(txCfg.samplesPerWake)     + "\n" +
+                   String(txCfg.samplingIntervalMs);
+
+      String sendCmd = "AT+SEND=" + String(sourceAddress) + "," +
+                       String(msg.length()) + "," + msg;
+      command(sendCmd.c_str(), 500);
+
+    } else {
+      // All values already in sync — send pure +ACK (no config payload)
+      Serial.println("[LoRa] Config in sync. Sending ACK.");
+      String sendCmd = "AT+SEND=" + String(sourceAddress) + ",4,+ACK";
+      command(sendCmd.c_str(), 500);
+    }
+
+  } else {
+    // Transmitter not in config, or packet predates op-config fields.
+    // Always ACK so the transmitter can exit early.
+    if (!cfgFound) {
+      Serial.printf("[LoRa] Transmitter %d not in config. Sending ACK.\n", sourceAddress);
+    } else {
+      Serial.println("[LoRa] Packet missing op-config fields. Sending ACK.");
+    }
+    String sendCmd = "AT+SEND=" + String(sourceAddress) + ",4,+ACK";
+    command(sendCmd.c_str(), 500);
+  }
+
+  // ---------------------------------------------------
+  // If packet failed validation, do NOT forward telemetry
+  // ---------------------------------------------------
+  if (!packetValid) {
+    Serial.println("[LoRa] Packet rejected due to invalid/null/negative payload. (ACK/SET_CONFIG sent).");
     return false;
   }
 
   // ---------------------------------------------------
-  // Build raw telemetry
+  // Build raw telemetry (only for valid packets)
   // ---------------------------------------------------
 
   raw.transmitterAddress =
@@ -320,6 +389,18 @@ bool LoRaManager::parseLoRaReceive(
 
   raw.hasBattery =
     parsed.batteryFound;
+
+  raw.hasOpConfig =
+    (parsed.wdsFound && parsed.spsFound && parsed.simFound);
+
+  raw.wakeDurationSec =
+    parsed.wakeDurationSec;
+
+  raw.samplesPerWake =
+    parsed.samplesPerWake;
+
+  raw.samplingIntervalMs =
+    parsed.samplingIntervalMs;
 
   // ---------------------------------------------------
   // Debug
