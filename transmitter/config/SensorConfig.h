@@ -14,6 +14,6 @@ struct SensorConfig {
 const SensorConfig sensorConfig = {
   30000,   // echoTimeoutUs
   58.0f,   // speedOfSoundDivisor
-  3,       // samplesCount
+  5,       // samplesCount
   30       // sampleIntervalMs
 };

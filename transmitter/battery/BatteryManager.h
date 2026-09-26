@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
+#include "../config/BoardConfig.h"
+#include "INA219Driver.h"
 
 // =====================================================
 //                  BATTERY MANAGER
@@ -16,6 +18,8 @@ public:
 
 private:
   bool _useHardwareADC;
+  INA219Driver _ina219;
+  bool _ina219Ok;
 };
 
 extern BatteryManager batteryManager;
